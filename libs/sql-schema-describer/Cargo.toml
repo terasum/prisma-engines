@@ -22,6 +22,7 @@ tracing-futures = "0.2"
 
 [dependencies.quaint]
 git = "https://github.com/prisma/quaint"
+rev = "479e08a41b13902028906bc05f778688c06a3f18"
 features = [
     "chrono",
     "sqlite",
@@ -32,7 +33,7 @@ features = [
 ]
 
 [dev-dependencies]
-barrel = { git = "https://github.com/prisma/barrel.git", features = ["sqlite3", "mysql", "pg", "mssql"], branch = "mssql-support" }
+barrel = { git = "https://github.com/prisma/barrel.git", rev = "f3b8ab47d3a3ad8d43dc2b89a5eec1c4e87b033d", features = ["sqlite3", "mysql", "pg", "mssql"], branch = "mssql-support" }
 pretty_assertions = "0.6"
 test-macros = { path = "../test-macros" }
 test-setup = { path = "../test-setup" }

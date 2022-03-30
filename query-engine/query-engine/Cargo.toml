@@ -20,7 +20,7 @@ connection-string = "0.1.10"
 connector = { path = "../connectors/query-connector", package = "query-connector" }
 datamodel = { path = "../../libs/datamodel/core" }
 datamodel-connector = { path = "../../libs/datamodel/connectors/datamodel-connector" }
-graphql-parser = { git = "https://github.com/prisma/graphql-parser" }
+graphql-parser = { git = "https://github.com/prisma/graphql-parser", rev = "6a3f58bd879065588e710cb02b5bd30c1ce182c3" }
 indexmap = { version = "1.7", features = ["serde-1"] }
 itertools = "0.10"
 mongodb-connector = { path = "../connectors/mongodb-query-connector", optional = true, package = "mongodb-query-connector" }
@@ -69,3 +69,4 @@ features = [
   "bigdecimal",
 ]
 git = "https://github.com/prisma/quaint"
+rev = "479e08a41b13902028906bc05f778688c06a3f18"
