@@ -33,7 +33,7 @@ features = [
 ]
 
 [dev-dependencies]
-barrel = { git = "https://github.com/prisma/barrel.git", rev = "f3b8ab47d3a3ad8d43dc2b89a5eec1c4e87b033d", features = ["sqlite3", "mysql", "pg", "mssql"], branch = "mssql-support" }
+barrel = { git = "https://github.com/prisma/barrel.git", rev = "4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805", features = ["sqlite3", "mysql", "pg", "mssql"] }
 pretty_assertions = "0.6"
 test-macros = { path = "../test-macros" }
 test-setup = { path = "../test-setup" }

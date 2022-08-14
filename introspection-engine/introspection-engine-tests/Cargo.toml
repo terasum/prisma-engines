@@ -30,9 +30,8 @@ url = "2"
 
 [dependencies.barrel]
 git = "https://github.com/prisma/barrel.git"
-rev = "f3b8ab47d3a3ad8d43dc2b89a5eec1c4e87b033d"
+rev = "4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805"
 features = ["sqlite3", "mysql", "pg", "mssql"]
-branch = "mssql-support"
 
 [dependencies.quaint]
 git = "https://github.com/prisma/quaint"

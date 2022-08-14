@@ -165,7 +165,7 @@ dependencies = [
 [[package]]
 name = "barrel"
 version = "0.6.6-alpha.0"
-source = "git+https://github.com/prisma/barrel.git?branch=mssql-support#4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805"
+source = "git+https://github.com/prisma/barrel.git?rev=4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805#4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805"
 
 [[package]]
 name = "base64"
@@ -630,7 +630,7 @@ dependencies = [
 [[package]]
 name = "cuid"
 version = "0.1.0"
-source = "git+https://github.com/prisma/cuid-rust#4ffb2e47c772af62fed3ddc92bb7fc444d19e159"
+source = "git+https://github.com/prisma/cuid-rust?rev=4ffb2e47c772af62fed3ddc92bb7fc444d19e159#4ffb2e47c772af62fed3ddc92bb7fc444d19e159"
 dependencies = [
  "hostname 0.1.5",
  "lazy_static",
@@ -1278,7 +1278,7 @@ checksum = "9b919933a397b79c37e33b77bb2aa3dc8eb6e165ad809e58ff75bc7db2e34574"
 [[package]]
 name = "graphql-parser"
 version = "0.3.0"
-source = "git+https://github.com/prisma/graphql-parser#6a3f58bd879065588e710cb02b5bd30c1ce182c3"
+source = "git+https://github.com/prisma/graphql-parser?rev=6a3f58bd879065588e710cb02b5bd30c1ce182c3#6a3f58bd879065588e710cb02b5bd30c1ce182c3"
 dependencies = [
  "combine",
  "indexmap",
