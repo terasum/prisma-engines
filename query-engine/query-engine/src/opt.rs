@@ -16,9 +16,6 @@ pub enum Subcommand {
 pub struct ExecuteRequestInput {
     /// GraphQL query to execute
     pub query: String,
-    /// Run in the legacy GraphQL mode
-    #[structopt(long)]
-    pub legacy: bool,
 }
 
 #[derive(Debug, Clone, StructOpt)]
@@ -26,6 +23,13 @@ pub struct ExecuteRequestInput {
 pub struct GetConfigInput {
     #[structopt(long)]
     pub ignore_env_var_errors: bool,
+}
+
+#[derive(Debug, Clone, StructOpt)]
+#[structopt(rename_all = "camelCase")]
+pub struct DebugPanicInput {
+    #[structopt(long)]
+    pub message: Option<String>,
 }
 
 #[derive(Debug, StructOpt, Clone)]
@@ -36,6 +40,8 @@ pub enum CliOpt {
     GetConfig(GetConfigInput),
     /// Executes one request and then terminates.
     ExecuteRequest(ExecuteRequestInput),
+    /// Artificially panic (for testing the CLI) with an optional message.
+    DebugPanic(DebugPanicInput),
 }
 
 #[derive(Debug, StructOpt, Clone)]
@@ -67,10 +73,6 @@ pub struct PrismaOpt {
     #[structopt(long, env = "OVERWRITE_DATASOURCES", parse(try_from_str = parse_base64_string))]
     pub overwrite_datasources: Option<String>,
 
-    /// Switches query schema generation to Prisma 1 compatible mode.
-    #[structopt(long, short)]
-    pub legacy: bool,
-
     /// Enables raw SQL queries with executeRaw/queryRaw mutation
     #[structopt(long, short = "r")]
     pub enable_raw_queries: bool,
@@ -83,6 +85,10 @@ pub struct PrismaOpt {
     #[structopt(long = "debug", short = "d")]
     pub enable_debug_mode: bool,
 
+    /// Enables the metrics endpoints
+    #[structopt(long, short = "m")]
+    pub enable_metrics: bool,
+
     /// Enable query logging [env: LOG_QUERIES=y]
     #[structopt(long, short = "o")]
     pub log_queries: bool,
@@ -93,10 +99,12 @@ pub struct PrismaOpt {
 
     /// Enable OpenTelemetry streaming from requests.
     #[structopt(long)]
-    pub open_telemetry: bool,
+    pub enable_open_telemetry: bool,
 
     /// The url to the OpenTelemetry collector.
-    #[structopt(long, default_value = "http://localhost:4317")]
+    /// Enabling this will send the OpenTelemtry tracing to a collector
+    /// and not via our custom stdout tracer
+    #[structopt(long, default_value)]
     pub open_telemetry_endpoint: String,
 
     #[structopt(subcommand)]

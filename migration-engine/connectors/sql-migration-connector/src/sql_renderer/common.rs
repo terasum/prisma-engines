@@ -59,7 +59,7 @@ where
     }
 }
 
-pub(crate) fn render_nullability(column: &ColumnWalker<'_>) -> &'static str {
+pub(crate) fn render_nullability(column: ColumnWalker<'_>) -> &'static str {
     if column.arity().is_required() {
         " NOT NULL"
     } else {
@@ -67,7 +67,7 @@ pub(crate) fn render_nullability(column: &ColumnWalker<'_>) -> &'static str {
     }
 }
 
-pub(crate) fn render_referential_action(action: &ForeignKeyAction) -> &'static str {
+pub(crate) fn render_referential_action(action: ForeignKeyAction) -> &'static str {
     match action {
         ForeignKeyAction::NoAction => "NO ACTION",
         ForeignKeyAction::Restrict => "RESTRICT",
@@ -77,16 +77,14 @@ pub(crate) fn render_referential_action(action: &ForeignKeyAction) -> &'static s
     }
 }
 
-pub(crate) fn format_hex(bytes: &[u8]) -> String {
+pub(crate) fn format_hex(bytes: &[u8], out: &mut String) {
     use std::fmt::Write as _;
 
-    let mut out = String::with_capacity(bytes.len() * 2);
+    out.reserve(bytes.len() * 2);
 
     for byte in bytes {
         write!(out, "{:02x}", byte).expect("failed to hex format a byte");
     }
-
-    out
 }
 
 pub(crate) trait IteratorJoin {

@@ -13,7 +13,7 @@ pub struct PrimaryKeyWalker<'db> {
     pub(crate) db: &'db ParserDatabase,
 }
 
-impl<'ast, 'db> PrimaryKeyWalker<'db> {
+impl<'db> PrimaryKeyWalker<'db> {
     /// The `@(@)id` AST node.
     pub fn ast_attribute(self) -> &'db ast::Attribute {
         &self.db.ast[self.attribute.source_attribute]
@@ -32,6 +32,21 @@ impl<'ast, 'db> PrimaryKeyWalker<'db> {
     /// Is this an `@id` on a specific field, rather than on the model?
     pub fn is_defined_on_field(self) -> bool {
         self.attribute.source_field.is_some()
+    }
+
+    /// If defined on a specific field, returns `@id`. Otherwise `@@id`.
+    pub fn attribute_name(self) -> &'static str {
+        if self.is_defined_on_field() {
+            "@id"
+        } else {
+            "@@id"
+        }
+    }
+
+    /// If true, the index defines the storage and ordering of the row. Mostly
+    /// matters on SQL Server where one can change the clustering.
+    pub fn clustered(self) -> Option<bool> {
+        self.attribute.clustered
     }
 
     /// The model the id is deined on.
@@ -55,11 +70,9 @@ impl<'ast, 'db> PrimaryKeyWalker<'db> {
 
     /// The scalar fields constrained by the id.
     pub fn fields(self) -> impl ExactSizeIterator<Item = ScalarFieldWalker<'db>> + 'db {
-        self.attribute.fields.iter().map(move |field| ScalarFieldWalker {
-            model_id: self.model_id,
-            field_id: field.field_id,
-            db: self.db,
-            scalar_field: &self.db.types.scalar_fields[&(self.model_id, field.field_id)],
+        self.attribute.fields.iter().map(move |field| {
+            let field_id = field.path.field_in_index();
+            self.model().scalar_field(field_id)
         })
     }
 
@@ -80,7 +93,12 @@ impl<'ast, 'db> PrimaryKeyWalker<'db> {
     /// Do the constrained fields match exactly these?
     pub(crate) fn contains_exactly_fields_by_id(self, fields: &[ast::FieldId]) -> bool {
         self.attribute.fields.len() == fields.len()
-            && self.attribute.fields.iter().zip(fields).all(|(a, b)| a.field_id == *b)
+            && self
+                .attribute
+                .fields
+                .iter()
+                .zip(fields)
+                .all(|(a, b)| a.path.field_in_index() == *b)
     }
 
     /// Do the constrained fields match exactly these?

@@ -1,60 +1,24 @@
-//! This crate is responsible for parsing, rendering and formatting a Prisma Schema.
+//! # PSL — Prisma Schema Language
+//!
+//! This crate is responsible for parsing, validating, formatting and rendering a PSL documents.
+//!
 //! A Prisma Schema consists out of two parts:
 //! 1. The `Datamodel` part refers to the model and enum definitions.
 //! 2. The `Configuration` part refers to the generator and datasource definitions.
-//!
-//! The data structures are organized into 3 layers:
-//! * The AST layer contains the data data structures representing the schema input.
-//! * The model layer contains the data structures that are semantically rich and therefore engines can build upon.
-//! * The JSON layer contains the data structures that represent the contract for the DMMF which is the API for client generators.
-//!
-//! The responsibilities of each top level module is as following:
-//! * `common`: contains constants and generic helpers
-//! * `error`: contains the error and result types
-//! * `ast`: contains the data structures for the AST of a Prisma schema. And the parsing functions to turn an input string into an AST.
-//! * `dml`: contains the models representing the Datamodel part of a Prisma schema
-//! * `configuration`: contains the models representing the Datasources and Generators of a Prisma schema
-//! * `transform`: contains the logic to turn an AST into models and vice versa
-//! * `json`: contains the logic to turn models into their JSON/DMMF representation
-//!
-//! The flow between the layers is depicted in the following diagram.
-//!<pre>
-//!                ┌──────────────────┐
-//!                │       json       │
-//!                └────────▲─────────┘
-//!                         │
-//!                         │
-//!      ┌──────────────────┐┌──────────────────┐
-//!      │       dml        ││  configuration   │
-//!      └──────────────────┘└──────────────────┘
-//!                        │  ▲
-//!┌─────────────────────┐ │  │ ┌─────────────────────┐
-//!│transform::dml_to_ast│ │  │ │transform::ast_to_dml│
-//!└─────────────────────┘ │  │ └─────────────────────┘
-//!                        │  │
-//!                        ▼  │
-//!                ┌──────────────────┐
-//!                │       ast        │
-//!                └──────────────────┘
-//!                        │  ▲
-//!                        │  │
-//!                        │  │
-//!                        ▼  │
-//!                 ┌──────────────────┐
-//!                 │  schema string   │
-//!                 └──────────────────┘
-//!</pre>
 //!
 
 #![deny(rust_2018_idioms, unsafe_code)]
 
 pub mod common;
-pub mod dml;
-pub mod json;
+
+/// `mcf`: Turns a collection of `configuration::Datasource` and `configuration::Generator` into a JSON representation.
+pub mod mcf;
 
 mod configuration;
+mod lift;
 mod reformat;
-mod transform;
+mod render;
+mod validate;
 
 pub use crate::{
     configuration::{Configuration, Datasource, Generator, StringFromEnvVar},
@@ -62,18 +26,26 @@ pub use crate::{
 };
 pub use datamodel_connector;
 pub use diagnostics;
-pub use parser_database;
-pub use parser_database::is_reserved_type_name;
-pub use schema_ast::{self, ast};
+pub use dml;
+pub use parser_database::{self, is_reserved_type_name};
 
+use self::validate::{validate, DatasourceLoader, GeneratorLoader};
 use crate::common::preview_features::PreviewFeature;
-use diagnostics::{Diagnostics, Validated};
+use diagnostics::Diagnostics;
 use enumflags2::BitFlags;
-use parser_database::ParserDatabase;
-use transform::{
-    ast_to_dml::{validate, DatasourceLoader, GeneratorLoader},
-    dml_to_ast::{self, GeneratorSerializer, LowerDmlToAst},
-};
+use parser_database::{ast, ParserDatabase, SourceFile};
+use std::sync::Arc;
+
+pub mod builtin_connectors {
+    pub use mongodb_datamodel_connector::*;
+    pub use sql_datamodel_connector::*;
+}
+
+#[derive(Debug)]
+pub struct Validated<T> {
+    pub subject: T,
+    pub warnings: Vec<diagnostics::DatamodelWarning>,
+}
 
 pub type ValidatedDatamodel = Validated<dml::Datamodel>;
 pub type ValidatedConfiguration = Validated<Configuration>;
@@ -97,28 +69,24 @@ impl ValidatedSchema {
     }
 }
 
-/// Parse and validate the whole schema. This function's signature is obviously less than optimal,
-/// let's work towards something simpler.
-pub fn parse_schema_parserdb(src: &str) -> Result<ValidatedSchema, String> {
+pub fn parse_schema_parserdb(file: impl Into<SourceFile>) -> Result<ValidatedSchema, String> {
+    let file = file.into();
+
     let mut diagnostics = Diagnostics::new();
+    let db = ParserDatabase::new(file.clone(), &mut diagnostics);
+
     diagnostics
         .to_result()
-        .map_err(|err| err.to_pretty_string("schema.prisma", src))?;
+        .map_err(|err| err.to_pretty_string("schema.prisma", file.as_str()))?;
 
-    let ast = schema_ast::parser::parse_schema(src, &mut diagnostics);
-    let generators = GeneratorLoader::load_generators_from_ast(&ast, &mut diagnostics);
+    let generators = GeneratorLoader::load_generators_from_ast(db.ast(), &mut diagnostics);
     let preview_features = preview_features(&generators);
-    let datasources = load_sources(&ast, preview_features, &mut diagnostics);
+    let datasources = load_sources(db.ast(), preview_features, &mut diagnostics);
 
-    diagnostics
-        .to_result()
-        .map_err(|err| err.to_pretty_string("schema.prisma", src))?;
-
-    let out = validate(ast, &datasources, preview_features, diagnostics);
-
+    let mut out = validate(db, &datasources, preview_features, diagnostics);
     out.diagnostics
         .to_result()
-        .map_err(|err| err.to_pretty_string("schema.prisma", src))?;
+        .map_err(|err| err.to_pretty_string("schema.prisma", file.as_str()))?;
 
     Ok(ValidatedSchema {
         configuration: Configuration {
@@ -141,22 +109,26 @@ pub fn parse_datamodel(datamodel_string: &str) -> Result<ValidatedDatamodel, dia
 fn parse_datamodel_internal(
     datamodel_string: &str,
 ) -> Result<Validated<(Configuration, dml::Datamodel)>, diagnostics::Diagnostics> {
-    let mut diagnostics = diagnostics::Diagnostics::new();
-    let ast = schema_ast::parser::parse_schema(datamodel_string, &mut diagnostics);
+    let file = SourceFile::new_allocated(Arc::from(datamodel_string.to_owned().into_boxed_str()));
 
-    let generators = GeneratorLoader::load_generators_from_ast(&ast, &mut diagnostics);
-    let preview_features = preview_features(&generators);
-    let datasources = load_sources(&ast, preview_features, &mut diagnostics);
+    let mut diagnostics = diagnostics::Diagnostics::new();
+    let db = ParserDatabase::new(file, &mut diagnostics);
 
     diagnostics.to_result()?;
 
-    let out = validate(ast, &datasources, preview_features, diagnostics);
+    let generators = GeneratorLoader::load_generators_from_ast(db.ast(), &mut diagnostics);
+    let preview_features = preview_features(&generators);
+    let datasources = load_sources(db.ast(), preview_features, &mut diagnostics);
+
+    diagnostics.to_result()?;
+
+    let out = validate(db, &datasources, preview_features, diagnostics);
 
     if !out.diagnostics.errors().is_empty() {
         return Err(out.diagnostics);
     }
 
-    let datamodel = transform::ast_to_dml::LiftAstToDml::new(&out.db, out.connector, out.referential_integrity).lift();
+    let datamodel = lift::LiftAstToDml::new(&out.db, out.connector, out.referential_integrity).lift();
 
     Ok(Validated {
         subject: (
@@ -166,13 +138,13 @@ fn parse_datamodel_internal(
             },
             datamodel,
         ),
-        warnings: out.diagnostics.warnings().to_vec(),
+        warnings: out.diagnostics.into_warnings(),
     })
 }
 
 pub fn parse_schema_ast(datamodel_string: &str) -> Result<ast::SchemaAst, diagnostics::Diagnostics> {
     let mut diagnostics = Diagnostics::default();
-    let schema = schema_ast::parser::parse_schema(datamodel_string, &mut diagnostics);
+    let schema = schema_ast::parse_schema(datamodel_string, &mut diagnostics);
 
     diagnostics.to_result()?;
 
@@ -182,7 +154,7 @@ pub fn parse_schema_ast(datamodel_string: &str) -> Result<ast::SchemaAst, diagno
 /// Loads all configuration blocks from a datamodel using the built-in source definitions.
 pub fn parse_configuration(schema: &str) -> Result<ValidatedConfiguration, diagnostics::Diagnostics> {
     let mut diagnostics = Diagnostics::default();
-    let ast = schema_ast::parser::parse_schema(schema, &mut diagnostics);
+    let ast = schema_ast::parse_schema(schema, &mut diagnostics);
 
     diagnostics.to_result()?;
 
@@ -197,7 +169,7 @@ pub fn parse_configuration(schema: &str) -> Result<ValidatedConfiguration, diagn
             generators,
             datasources,
         },
-        warnings: diagnostics.warnings().to_owned(),
+        warnings: diagnostics.into_warnings(),
     })
 }
 
@@ -213,82 +185,28 @@ fn load_sources(
 //  ************** RENDERING FUNCTIONS **************
 //
 
-/// Renders to a return string.
+/// Renders the datamodel _without configuration blocks_.
 pub fn render_datamodel_to_string(datamodel: &dml::Datamodel, configuration: Option<&Configuration>) -> String {
-    let mut writable_string = String::with_capacity(datamodel.models.len() * 20);
-    render_datamodel_to(&mut writable_string, datamodel, configuration);
-    writable_string
-}
-
-/// Renders an AST to a string.
-pub fn render_schema_ast_to_string(schema: &ast::SchemaAst) -> String {
-    let mut writable_string = String::with_capacity(schema.tops.len() * 20);
-
-    render_schema_ast_to(&mut writable_string, schema, 2);
-
-    writable_string
-}
-
-/// Renders as a string into the stream.
-pub fn render_datamodel_to(
-    stream: &mut dyn std::fmt::Write,
-    datamodel: &dml::Datamodel,
-    configuration: Option<&Configuration>,
-) {
     let datasource = configuration.and_then(|c| c.datasources.first());
-
-    let preview_features = configuration
-        .map(|c| c.preview_features())
-        .unwrap_or_else(BitFlags::empty);
-
-    let lowered = LowerDmlToAst::new(datasource, preview_features).lower(datamodel);
-
-    render_schema_ast_to(stream, &lowered, 2);
+    let mut out = String::new();
+    render::render_datamodel(render::RenderParams { datasource, datamodel }, &mut out);
+    reformat(&out, DEFAULT_INDENT_WIDTH).expect("Internal error: failed to reformat introspected schema")
 }
 
-/// Renders as a string into the stream.
-pub fn render_datamodel_to_with_preview_flags(
-    stream: &mut dyn std::fmt::Write,
-    datamodel: &dml::Datamodel,
-    datasource: Option<&Datasource>,
-    flags: BitFlags<PreviewFeature>,
-) {
-    let lowered = LowerDmlToAst::new(datasource, flags).lower(datamodel);
-    render_schema_ast_to(stream, &lowered, 2);
-}
-
-/// Renders a datamodel, sources and generators to a string.
+/// Renders a datamodel, sources and generators.
 pub fn render_datamodel_and_config_to_string(
     datamodel: &dml::Datamodel,
     config: &configuration::Configuration,
 ) -> String {
-    let mut writable_string = String::with_capacity(datamodel.models.len() * 20);
-
-    render_datamodel_and_config_to(&mut writable_string, datamodel, config);
-
-    writable_string
-}
-
-/// Renders a datamodel, generators and sources to a stream as a string.
-fn render_datamodel_and_config_to(
-    stream: &mut dyn std::fmt::Write,
-    datamodel: &dml::Datamodel,
-    config: &configuration::Configuration,
-) {
-    let mut lowered = LowerDmlToAst::new(config.datasources.first(), config.preview_features()).lower(datamodel);
-
-    dml_to_ast::add_sources_to_ast(config, &mut lowered);
-    GeneratorSerializer::add_generators_to_ast(&config.generators, &mut lowered);
-
-    render_schema_ast_to(stream, &lowered, 2);
-}
-
-/// Renders as a string into the stream.
-fn render_schema_ast_to(stream: &mut dyn std::fmt::Write, schema: &ast::SchemaAst, ident_width: usize) {
-    let mut renderer = schema_ast::renderer::Renderer::new(stream, ident_width);
-    renderer.render(schema);
+    let mut out = String::new();
+    let datasource = config.datasources.first();
+    render::render_configuration(config, &mut out);
+    render::render_datamodel(render::RenderParams { datasource, datamodel }, &mut out);
+    reformat(&out, DEFAULT_INDENT_WIDTH).expect("Internal error: failed to reformat introspected schema")
 }
 
 fn preview_features(generators: &[Generator]) -> BitFlags<PreviewFeature> {
     generators.iter().map(|gen| gen.preview_features()).collect()
 }
+
+const DEFAULT_INDENT_WIDTH: usize = 2;

@@ -7,9 +7,14 @@ pub use quaint_result_set_ext::*;
 use datamodel::datamodel_connector::Connector;
 use pretty_assertions::assert_eq;
 use prisma_value::PrismaValue;
+use sql::{
+    postgres::PostgresSchemaExt,
+    walkers::{ColumnWalker, ForeignKeyWalker, IndexWalker, TableWalker},
+};
 use sql_schema_describer::{
-    Column, ColumnTypeFamily, DefaultKind, DefaultValue, Enum, ForeignKey, ForeignKeyAction, Index, IndexType,
-    PrimaryKey, SQLIndexAlgorithm, SQLSortOrder, SqlSchema, Table,
+    self as sql,
+    postgres::{SQLOperatorClassKind, SqlIndexAlgorithm},
+    ColumnTypeFamily, DefaultKind, DefaultValue, Enum, ForeignKeyAction, IndexType, SQLSortOrder, SqlSchema,
 };
 use test_setup::{BitFlags, Tags};
 
@@ -31,30 +36,23 @@ impl SchemaAssertion {
         self.schema
     }
 
-    pub fn assert_equals(self, other: &SqlSchema) -> Self {
-        assert_eq!(&self.schema, other);
-        self
-    }
-
-    pub fn assert_ne(self, other: &SqlSchema) -> Self {
-        assert_ne!(&self.schema, other);
-        self
-    }
-
     #[track_caller]
-    fn find_table(&self, table_name: &str) -> &sql_schema_describer::Table {
-        match self.schema.tables.iter().find(|t| {
+    fn find_table<'a>(&'a self, table_name: &str) -> TableWalker<'a> {
+        match self.schema.table_walkers().find(|t| {
             if self.tags.contains(Tags::LowerCasesTableNames) {
-                t.name.eq_ignore_ascii_case(table_name)
+                t.name().eq_ignore_ascii_case(table_name)
             } else {
-                t.name == table_name
+                t.name() == table_name
             }
         }) {
             Some(table) => table,
             None => panic!(
                 "assert_has_table failed. Table {} not found. Tables in database: {:?}",
                 table_name,
-                self.schema.tables.iter().map(|table| &table.name).collect::<Vec<_>>()
+                self.schema
+                    .table_walkers()
+                    .map(|table| table.name())
+                    .collect::<Vec<_>>()
             ),
         }
     }
@@ -71,7 +69,7 @@ impl SchemaAssertion {
         F: for<'a> FnOnce(TableAssertion<'a>) -> TableAssertion<'a>,
     {
         let table = self.find_table(table_name);
-        table_assertions(TableAssertion::new(table, self.tags));
+        table_assertions(TableAssertion { table, tags: self.tags });
         self
     }
 
@@ -106,14 +104,14 @@ impl SchemaAssertion {
 
     #[track_caller]
     pub fn assert_tables_count(self, expected_count: usize) -> Self {
-        let actual_count = self.schema.tables.len();
+        let actual_count = self.schema.tables_count();
 
         assert_eq!(
             actual_count, expected_count,
             "Assertion failed. Expected the schema to have {expected_count} tables, found {actual_count}. ({table_names:?})",
             expected_count = expected_count,
             actual_count = actual_count,
-            table_names = self.schema.tables.iter().map(|t| t.name.as_str()).collect::<Vec<&str>>(),
+            table_names = self.schema.table_walkers().map(|t| t.name()).collect::<Vec<&str>>(),
         );
 
         self
@@ -158,37 +156,26 @@ impl<'a> EnumAssertion<'a> {
 
 #[derive(Clone, Copy)]
 pub struct TableAssertion<'a> {
-    table: &'a Table,
+    table: TableWalker<'a>,
     tags: BitFlags<Tags>,
 }
 
 impl<'a> TableAssertion<'a> {
-    pub fn new(table: &'a Table, tags: BitFlags<Tags>) -> Self {
-        Self { table, tags }
-    }
-
     pub fn assert_column_count(self, n: usize) -> Self {
-        let columns_count = self.table.columns.len();
+        let columns_count = self.table.columns().count();
 
         assert!(
             columns_count == n,
-            "Assertion failed. Expected {n} columns, found {columns_count}. {columns:#?}",
+            "Assertion failed. Expected {n} columns, found {columns_count}.",
             n = n,
             columns_count = columns_count,
-            columns = &self.table.columns,
         );
         self
     }
 
     pub fn assert_foreign_keys_count(self, n: usize) -> Self {
-        let fk_count = self.table.foreign_keys.len();
+        let fk_count = self.table.foreign_key_count();
         assert!(fk_count == n, "Expected {} foreign keys, found {}.", n, fk_count);
-        self
-    }
-
-    pub fn assert_has_fk(self, fk: &ForeignKey) -> Self {
-        let matching_fk = self.table.foreign_keys.iter().any(|found| found == fk);
-        assert!(matching_fk, "Assertion failed. Could not find fk.");
         self
     }
 
@@ -197,10 +184,14 @@ impl<'a> TableAssertion<'a> {
     where
         F: FnOnce(ForeignKeyAssertion<'a>) -> ForeignKeyAssertion<'a>,
     {
-        if let Some(fk) = self.table.foreign_keys.iter().find(|fk| fk.columns == columns) {
-            fk_assertions(ForeignKeyAssertion::new(fk, self.tags));
+        if let Some(fk) = self
+            .table
+            .foreign_keys()
+            .find(|fk| fk.constrained_columns().map(|c| c.name()).collect::<Vec<_>>() == columns)
+        {
+            fk_assertions(ForeignKeyAssertion { fk, tags: self.tags });
         } else {
-            panic!("Could not find foreign key on {}.{:?}", self.table.name, columns);
+            panic!("Could not find foreign key on {}.{:?}", self.table.name(), columns);
         }
 
         self
@@ -209,9 +200,8 @@ impl<'a> TableAssertion<'a> {
     pub fn assert_fk_with_name(self, name: &str) -> Self {
         let matching_fk = self
             .table
-            .foreign_keys
-            .iter()
-            .any(|found| found.constraint_name == Some(name.to_string()));
+            .foreign_keys()
+            .any(|found| found.constraint_name() == Some(name));
         assert!(matching_fk, "Assertion failed. Could not find fk with name.");
         self
     }
@@ -220,7 +210,8 @@ impl<'a> TableAssertion<'a> {
         if self.table.column(column_name).is_some() {
             panic!(
                 "Assertion failed: found column `{}` on `{}`.",
-                column_name, self.table.name
+                column_name,
+                self.table.name()
             );
         }
         self
@@ -233,7 +224,7 @@ impl<'a> TableAssertion<'a> {
             None => panic!(
                 "Assertion failed: column {} not found. Existing columns: {:?}",
                 column_name,
-                self.table.columns.iter().map(|col| &col.name).collect::<Vec<_>>()
+                self.table.columns().map(|col| col.name()).collect::<Vec<_>>()
             ),
         }
     }
@@ -250,7 +241,7 @@ impl<'a> TableAssertion<'a> {
     }
 
     pub fn assert_columns_count(self, count: usize) -> Self {
-        let actual_count = self.table.columns.len();
+        let actual_count = self.table.columns().count();
 
         assert!(
             actual_count == count,
@@ -264,10 +255,9 @@ impl<'a> TableAssertion<'a> {
 
     pub fn assert_has_no_pk(self) -> Self {
         assert!(
-            self.table.primary_key.is_none(),
-            "Assertion failed: expected no primary key on {}, but found one. ({:?})",
-            self.table.name,
-            self.table.primary_key
+            self.table.primary_key().is_none(),
+            "Assertion failed: expected no primary key on {}, but found one.",
+            self.table.name(),
         );
 
         self
@@ -277,18 +267,18 @@ impl<'a> TableAssertion<'a> {
     where
         F: FnOnce(PrimaryKeyAssertion<'a>) -> PrimaryKeyAssertion<'a>,
     {
-        match self.table.primary_key.as_ref() {
+        match self.table.primary_key() {
             Some(pk) => {
-                pk_assertions(PrimaryKeyAssertion { pk, table: self.table });
+                pk_assertions(PrimaryKeyAssertion { pk, tags: self.tags });
                 self
             }
-            None => panic!("Primary key not found on {}.", self.table.name),
+            None => panic!("Primary key not found on {}.", self.table.name()),
         }
     }
 
     #[track_caller]
     pub fn assert_indexes_count(self, n: usize) -> Self {
-        let idx_count = self.table.indices.len();
+        let idx_count = self.table.indexes().filter(|idx| !idx.is_primary_key()).count();
         assert!(idx_count == n, "Expected {} indexes, found {}.", n, idx_count);
         self
     }
@@ -299,13 +289,16 @@ impl<'a> TableAssertion<'a> {
     {
         if let Some(idx) = self
             .table
-            .indices
-            .iter()
+            .indexes()
+            .filter(|idx| !idx.is_primary_key())
             .find(|idx| idx.column_names().collect::<Vec<_>>() == columns)
         {
-            index_assertions(IndexAssertion(idx));
+            index_assertions(IndexAssertion {
+                index: idx,
+                tags: self.tags,
+            });
         } else {
-            panic!("Could not find index on {}.{:?}", self.table.name, columns);
+            panic!("Could not find index on {}.{:?}", self.table.name(), columns);
         }
 
         self
@@ -314,37 +307,31 @@ impl<'a> TableAssertion<'a> {
     pub fn assert_has_index_name_and_type(self, name: &str, unique: bool) -> Self {
         if self
             .table
-            .indices
-            .iter()
-            .any(|idx| idx.name == name && idx.is_unique() == unique)
+            .indexes()
+            .any(|idx| idx.name() == name && idx.is_unique() == unique)
         {
             self
         } else {
             panic!("Could not find index with name {} and correct type", name);
         }
     }
-
-    pub fn debug_print(self) -> Self {
-        println!("{:?}", self.table);
-        self
-    }
 }
 
 pub struct ColumnAssertion<'a> {
-    column: &'a Column,
+    column: ColumnWalker<'a>,
     tags: BitFlags<Tags>,
 }
 
 impl<'a> ColumnAssertion<'a> {
-    pub fn new(column: &'a Column, tags: BitFlags<Tags>) -> Self {
+    pub fn new(column: ColumnWalker<'a>, tags: BitFlags<Tags>) -> Self {
         Self { column, tags }
     }
 
     pub fn assert_auto_increments(self) -> Self {
         assert!(
-            self.column.auto_increment,
+            self.column.is_autoincrement(),
             "Assertion failed. Expected column `{}` to be auto-incrementing.",
-            self.column.name,
+            self.column.name(),
         );
 
         self
@@ -352,9 +339,9 @@ impl<'a> ColumnAssertion<'a> {
 
     pub fn assert_no_auto_increment(self) -> Self {
         assert!(
-            !self.column.auto_increment,
+            !self.column.is_autoincrement(),
             "Assertion failed. Expected column `{}` not to be auto-incrementing.",
-            self.column.name,
+            self.column.name(),
         );
 
         self
@@ -362,10 +349,10 @@ impl<'a> ColumnAssertion<'a> {
 
     #[track_caller]
     pub fn assert_default_kind(self, expected: Option<DefaultKind>) -> Self {
-        let found = &self.column.default.as_ref().map(|d| d.kind());
+        let found = &self.column.default().map(|d| d.kind());
 
         assert!(
-            self.column.default.as_ref().map(|d| d.kind()) == expected.as_ref(),
+            self.column.default().map(|d| d.kind()) == expected.as_ref(),
             "Assertion failed. Expected default: {:?}, but found {:?}",
             expected,
             found
@@ -377,11 +364,11 @@ impl<'a> ColumnAssertion<'a> {
     #[track_caller]
     pub fn assert_default(self, expected: Option<DefaultValue>) -> Self {
         let this = self.assert_default_kind(expected.clone().map(|val| val.into_kind()));
-        let found = &this.column.default.as_ref().map(|d| d.constraint_name());
+        let found = this.column.default().map(|d| d.constraint_name());
         let expected = expected.as_ref().map(|d| d.constraint_name());
 
         assert!(
-            found == &expected,
+            found == expected,
             "Assertion failed. Expected default constraint name: {:?}, but found {:?}",
             expected,
             found
@@ -391,12 +378,12 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_full_data_type(self, full_data_type: &str) -> Self {
-        let found = &self.column.tpe.full_data_type;
+        let found = &self.column.column_type().full_data_type;
 
         assert!(
             found == full_data_type,
             "Assertion failed: expected the full_data_type for the `{}` column to be `{}`, found `{}`",
-            self.column.name,
+            self.column.name(),
             full_data_type,
             found
         );
@@ -413,13 +400,13 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_default_value(self, expected: &prisma_value::PrismaValue) -> Self {
-        let found = &self.column.default;
+        let found = self.column.default();
 
         match found.as_ref().map(|d| d.kind()) {
             Some(DefaultKind::Value(ref val)) => assert!(
                 val == expected,
                 "Assertion failed. Expected the default value for `{}` to be `{:?}`, got `{:?}`",
-                self.column.name,
+                self.column.name(),
                 expected,
                 val
             ),
@@ -433,13 +420,13 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_dbgenerated(self, expected: &str) -> Self {
-        let found = &self.column.default;
+        let found = self.column.default();
 
-        match found.as_ref().map(|d| d.kind()) {
+        match found.map(|d| d.kind()) {
             Some(DefaultKind::DbGenerated(val)) => assert!(
                 val == expected,
                 "Assertion failed. Expected the default value for `{}` to be dbgenerated with `{:?}`, got `{:?}`",
-                self.column.name,
+                self.column.name(),
                 expected,
                 val
             ),
@@ -453,7 +440,7 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_enum_default(self, expected: &str) -> Self {
-        let default = self.column.default.as_ref().unwrap();
+        let default = self.column.default().unwrap();
 
         assert!(matches!(default.kind(), DefaultKind::Value(PrismaValue::Enum(s)) if s == expected));
 
@@ -462,12 +449,12 @@ impl<'a> ColumnAssertion<'a> {
 
     pub fn assert_native_type(self, expected: &str, connector: &dyn Connector) -> Self {
         let found = connector
-            .introspect_native_type(self.column.tpe.native_type.clone().unwrap())
+            .introspect_native_type(self.column.column_type().native_type.clone().unwrap())
             .to_string();
         assert!(
             found == expected,
             "Assertion failed. Expected the column native type for `{}` to be `{:?}`, found `{:?}`",
-            self.column.name,
+            self.column.name(),
             expected,
             found,
         );
@@ -476,7 +463,7 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_type_family(self, expected: ColumnTypeFamily) -> Self {
-        let found = &self.column.tpe.family;
+        let found = self.column.column_type_family();
 
         let expected = match expected {
             ColumnTypeFamily::Enum(tbl_name) if self.tags.contains(Tags::LowerCasesTableNames) => {
@@ -488,7 +475,7 @@ impl<'a> ColumnAssertion<'a> {
         assert!(
             found == &expected,
             "Assertion failed. Expected the column type family for `{}` to be `{:?}`, found `{:?}`",
-            self.column.name,
+            self.column.name(),
             expected,
             found,
         );
@@ -497,7 +484,7 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_type_is_bigint(self) -> Self {
-        let found = &self.column.tpe.family;
+        let found = self.column.column_type_family();
 
         assert!(
             found == &sql_schema_describer::ColumnTypeFamily::BigInt,
@@ -509,7 +496,7 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_type_is_bytes(self) -> Self {
-        let found = &self.column.tpe.family;
+        let found = self.column.column_type_family();
 
         assert!(
             found == &sql_schema_describer::ColumnTypeFamily::Binary,
@@ -521,7 +508,7 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_type_is_decimal(self) -> Self {
-        let found = &self.column.tpe.family;
+        let found = self.column.column_type_family();
 
         assert!(
             found == &sql_schema_describer::ColumnTypeFamily::Decimal,
@@ -533,7 +520,7 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_type_is_enum(self) -> Self {
-        let found = &self.column.tpe.family;
+        let found = &self.column.column_type_family();
 
         assert!(
             matches!(found, sql_schema_describer::ColumnTypeFamily::Enum(_)),
@@ -545,7 +532,7 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_type_is_string(self) -> Self {
-        let found = &self.column.tpe.family;
+        let found = self.column.column_type_family();
 
         assert!(
             found == &sql_schema_describer::ColumnTypeFamily::String,
@@ -557,7 +544,7 @@ impl<'a> ColumnAssertion<'a> {
     }
 
     pub fn assert_type_is_int(self) -> Self {
-        let found = &self.column.tpe.family;
+        let found = self.column.column_type_family();
 
         assert!(
             found == &sql_schema_describer::ColumnTypeFamily::Int,
@@ -570,10 +557,10 @@ impl<'a> ColumnAssertion<'a> {
 
     pub fn assert_is_list(self) -> Self {
         assert!(
-            self.column.tpe.arity.is_list(),
+            self.column.arity().is_list(),
             "Assertion failed. Expected column `{}` to be a list, got {:?}",
-            self.column.name,
-            self.column.tpe.arity,
+            self.column.name(),
+            self.column.arity(),
         );
 
         self
@@ -581,10 +568,10 @@ impl<'a> ColumnAssertion<'a> {
 
     pub fn assert_is_nullable(self) -> Self {
         assert!(
-            self.column.tpe.arity.is_nullable(),
+            self.column.arity().is_nullable(),
             "Assertion failed. Expected column `{}` to be nullable, got {:?}",
-            self.column.name,
-            self.column.tpe.arity,
+            self.column.name(),
+            self.column.arity(),
         );
 
         self
@@ -592,10 +579,10 @@ impl<'a> ColumnAssertion<'a> {
 
     pub fn assert_is_required(self) -> Self {
         assert!(
-            self.column.tpe.arity.is_required(),
+            self.column.arity().is_required(),
             "Assertion failed. Expected column `{}` to be NOT NULL, got {:?}",
-            self.column.name,
-            self.column.tpe.arity,
+            self.column.name(),
+            self.column.arity(),
         );
 
         self
@@ -605,30 +592,40 @@ impl<'a> ColumnAssertion<'a> {
 pub struct IndexColumnAssertion {
     sort_order: Option<SQLSortOrder>,
     length: Option<u32>,
+    operator_class: Option<SQLOperatorClassKind>,
 }
 
 impl IndexColumnAssertion {
+    #[track_caller]
     pub fn assert_sort_order(self, sort_order: SQLSortOrder) -> Self {
         assert_eq!(self.sort_order, Some(sort_order));
 
         self
     }
 
+    #[track_caller]
     pub fn assert_length_prefix(self, length: u32) -> Self {
         assert_eq!(self.length, Some(length));
 
         self
     }
 
+    #[track_caller]
     pub fn assert_no_length_prefix(self) -> Self {
         assert_eq!(self.length, None);
+        self
+    }
+
+    #[track_caller]
+    pub fn assert_ops(self, ops: SQLOperatorClassKind) -> Self {
+        assert_eq!(self.operator_class, Some(ops));
         self
     }
 }
 
 pub struct PrimaryKeyAssertion<'a> {
-    pk: &'a PrimaryKey,
-    table: &'a Table,
+    pk: IndexWalker<'a>,
+    tags: BitFlags<Tags>,
 }
 
 impl<'a> PrimaryKeyAssertion<'a> {
@@ -644,25 +641,27 @@ impl<'a> PrimaryKeyAssertion<'a> {
     {
         let col = self
             .pk
-            .columns
-            .iter()
-            .find(|c| c.name == column_name)
+            .columns()
+            .find(|c| c.name() == column_name)
             .unwrap_or_else(|| panic!("Could not find column {}", column_name));
 
         f(IndexColumnAssertion {
-            length: col.length,
-            sort_order: col.sort_order,
+            length: col.length(),
+            sort_order: col.sort_order(),
+            operator_class: None,
         });
 
         self
     }
 
+    #[track_caller]
     pub fn assert_has_autoincrement(self) -> Self {
         assert!(
-            self.table
-                .columns
-                .iter()
-                .any(|column| self.pk.column_names().any(|name| name == column.name) && column.auto_increment),
+            self.pk.columns().any(|column| column.as_column().is_autoincrement()
+                || matches!(
+                    column.as_column().default().map(|d| d.kind()),
+                    Some(DefaultKind::UniqueRowid)
+                )),
             "Assertion failed: expected a sequence on the primary key, found none."
         );
 
@@ -671,48 +670,53 @@ impl<'a> PrimaryKeyAssertion<'a> {
 
     pub fn assert_has_no_autoincrement(self) -> Self {
         assert!(
-            !self
-                .table
-                .columns
-                .iter()
-                .any(|column| self.pk.column_names().any(|c| c == column.name) && column.auto_increment),
+            !self.pk.columns().any(|column| column.as_column().is_autoincrement()),
             "Assertion failed: expected no sequence on the primary key, but found one."
         );
 
         self
     }
 
-    pub fn assert_constraint_name(self, constraint_name: Option<String>) -> Self {
-        assert_eq!(self.pk.constraint_name, constraint_name);
+    pub fn assert_constraint_name(self, constraint_name: &str) -> Self {
+        assert_eq!(self.pk.name(), constraint_name);
+        self
+    }
+
+    #[track_caller]
+    pub fn assert_non_clustered(self) -> Self {
+        if self.tags.contains(Tags::Mssql) {
+            let ext: &sql::mssql::MssqlSchemaExt = self.pk.schema.downcast_connector_data();
+            assert!(!ext.index_is_clustered(self.pk.id))
+        }
 
         self
     }
 
-    pub fn debug_print(self) -> Self {
-        println!("{:?}", &self.pk);
+    #[track_caller]
+    pub fn assert_clustered(self) -> Self {
+        if self.tags.contains(Tags::Mssql) {
+            let ext: &sql::mssql::MssqlSchemaExt = self.pk.schema.downcast_connector_data();
+            assert!(ext.index_is_clustered(self.pk.id))
+        }
+
         self
     }
 }
 
 pub struct ForeignKeyAssertion<'a> {
-    fk: &'a ForeignKey,
+    fk: ForeignKeyWalker<'a>,
     tags: BitFlags<Tags>,
 }
 
 impl<'a> ForeignKeyAssertion<'a> {
-    pub fn new(fk: &'a ForeignKey, tags: BitFlags<Tags>) -> Self {
-        Self { fk, tags }
-    }
-
     #[track_caller]
     pub fn assert_references(self, table: &str, columns: &[&str]) -> Self {
         assert!(
-            self.is_same_table_name(&self.fk.referenced_table, table) && self.fk.referenced_columns == columns,
-            r#"Assertion failed. Expected reference to "{}" ({:?}). Found "{}" ({:?}) "#,
+            self.is_same_table_name(self.fk.referenced_table().name(), table)
+                && self.fk.referenced_columns().map(|c| c.name()).collect::<Vec<_>>() == columns,
+            r#"Assertion failed. Expected reference to "{}" ({:?})."#,
             table,
             columns,
-            self.fk.referenced_table,
-            self.fk.referenced_columns,
         );
 
         self
@@ -721,10 +725,10 @@ impl<'a> ForeignKeyAssertion<'a> {
     #[track_caller]
     pub fn assert_referential_action_on_delete(self, action: ForeignKeyAction) -> Self {
         assert!(
-            self.fk.on_delete_action == action,
+            self.fk.on_delete_action() == action,
             "Assertion failed: expected foreign key to {:?} on delete, but got {:?}.",
             action,
-            self.fk.on_delete_action
+            self.fk.on_delete_action()
         );
 
         self
@@ -733,10 +737,10 @@ impl<'a> ForeignKeyAssertion<'a> {
     #[track_caller]
     pub fn assert_referential_action_on_update(self, action: ForeignKeyAction) -> Self {
         assert!(
-            self.fk.on_update_action == action,
+            self.fk.on_update_action() == action,
             "Assertion failed: expected foreign key to {:?} on update, but got {:?}.",
             action,
-            self.fk.on_update_action
+            self.fk.on_update_action()
         );
 
         self
@@ -751,42 +755,67 @@ impl<'a> ForeignKeyAssertion<'a> {
     }
 }
 
-pub struct IndexAssertion<'a>(&'a Index);
+pub struct IndexAssertion<'a> {
+    index: IndexWalker<'a>,
+    tags: BitFlags<Tags>,
+}
 
 impl<'a> IndexAssertion<'a> {
     #[track_caller]
     pub fn assert_name(self, name: &str) -> Self {
-        assert_eq!(self.0.name, name);
+        assert_eq!(self.index.name(), name);
 
         self
     }
 
     pub fn assert_is_fulltext(self) -> Self {
-        assert_eq!(self.0.tpe, IndexType::Fulltext);
+        assert_eq!(self.index.index_type(), IndexType::Fulltext);
 
         self
     }
 
     pub fn assert_is_normal(self) -> Self {
-        assert_eq!(self.0.tpe, IndexType::Normal);
+        assert_eq!(self.index.index_type(), IndexType::Normal);
 
         self
     }
 
     pub fn assert_is_unique(self) -> Self {
-        assert_eq!(self.0.tpe, IndexType::Unique);
+        assert_eq!(self.index.index_type(), IndexType::Unique);
+
+        self
+    }
+
+    #[track_caller]
+    pub fn assert_clustered(self) -> Self {
+        if self.tags.contains(Tags::Mssql) {
+            let ext: &sql::mssql::MssqlSchemaExt = self.index.schema.downcast_connector_data();
+            assert!(ext.index_is_clustered(self.index.id))
+        }
+
+        self
+    }
+
+    #[track_caller]
+    pub fn assert_non_clustered(self) -> Self {
+        if self.tags.contains(Tags::Mssql) {
+            let ext: &sql::mssql::MssqlSchemaExt = self.index.schema.downcast_connector_data();
+            assert!(!ext.index_is_clustered(self.index.id))
+        }
 
         self
     }
 
     pub fn assert_is_not_unique(self) -> Self {
-        assert_eq!(self.0.tpe, IndexType::Normal);
+        assert_eq!(self.index.index_type(), IndexType::Normal);
 
         self
     }
 
-    pub fn assert_algorithm(self, algo: SQLIndexAlgorithm) -> Self {
-        assert_eq!(self.0.algorithm, Some(algo));
+    pub fn assert_algorithm(self, algo: SqlIndexAlgorithm) -> Self {
+        let postgres_ext: &PostgresSchemaExt = self.index.schema.downcast_connector_data();
+        let algorithm = postgres_ext.index_algorithm(self.index.id);
+        assert_eq!(algorithm, algo);
 
         self
     }
@@ -795,11 +824,24 @@ impl<'a> IndexAssertion<'a> {
     where
         F: FnOnce(IndexColumnAssertion) -> IndexColumnAssertion,
     {
-        let col = self.0.columns.iter().find(|i| i.name == column_name).unwrap();
+        let col = self
+            .index
+            .columns()
+            .find(|c| c.as_column().name() == column_name)
+            .unwrap();
+
+        let operator_class = if self.tags.contains(Tags::Postgres) {
+            let ext: &PostgresSchemaExt = self.index.schema.downcast_connector_data();
+
+            ext.get_opclass(col.id).map(|c| c.kind.clone())
+        } else {
+            None
+        };
 
         f(IndexColumnAssertion {
-            sort_order: col.sort_order,
-            length: col.length,
+            sort_order: col.sort_order(),
+            length: col.length(),
+            operator_class,
         });
 
         self

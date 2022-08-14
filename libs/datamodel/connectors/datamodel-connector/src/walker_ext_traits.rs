@@ -1,7 +1,10 @@
 use crate::{
     constraint_names::ConstraintNames, Connector, NativeTypeInstance, ReferentialAction, ReferentialIntegrity,
 };
-use parser_database::{ast, walkers::*};
+use parser_database::{
+    ast::{self, WithSpan},
+    walkers::*,
+};
 use std::borrow::Cow;
 
 pub trait IndexWalkerExt<'db> {
@@ -16,9 +19,11 @@ impl<'db> IndexWalkerExt<'db> for IndexWalker<'db> {
 
         let model = self.model();
         let model_db_name = model.database_name();
-        let field_db_names: Vec<&str> = model
-            .get_field_database_names(&self.fields().map(|f| f.field_id()).collect::<Vec<_>>())
-            .collect();
+
+        let field_db_names = self
+            .scalar_field_attributes()
+            .map(|f| f.as_mapped_path_to_indexed_field())
+            .collect::<Vec<_>>();
 
         if self.is_unique() {
             ConstraintNames::unique_index_name(model_db_name, &field_db_names, connector).into()
@@ -96,15 +101,10 @@ impl<'db> InlineRelationWalkerExt<'db> for InlineRelationWalker<'db> {
     fn constraint_name(self, connector: &dyn Connector) -> Cow<'db, str> {
         self.mapped_name().map(Cow::Borrowed).unwrap_or_else(|| {
             let model_database_name = self.referencing_model().database_name();
-            let field_names: Vec<&str> = match self.referencing_fields() {
-                ReferencingFields::Concrete(fields) => fields.map(|f| f.database_name()).collect(),
-                ReferencingFields::Inferred(fields) => {
-                    let field_names: Vec<_> = fields.iter().map(|f| f.name.as_str()).collect();
-                    return ConstraintNames::foreign_key_constraint_name(model_database_name, &field_names, connector)
-                        .into();
-                }
-                ReferencingFields::NA => Vec::new(),
-            };
+            let field_names: Vec<&str> = self
+                .referencing_fields()
+                .map(|fields| fields.map(|f| f.database_name()).collect())
+                .unwrap_or_default();
             ConstraintNames::foreign_key_constraint_name(model_database_name, &field_names, connector).into()
         })
     }
@@ -122,7 +122,27 @@ impl ScalarFieldWalkerExt for ScalarFieldWalker<'_> {
     fn native_type_instance(&self, connector: &dyn Connector) -> Option<NativeTypeInstance> {
         self.raw_native_type().and_then(|(_, name, args, _)| {
             connector
-                .parse_native_type(name, args.to_owned(), self.ast_field().span)
+                .parse_native_type(name, args.to_owned(), self.ast_field().span())
+                .ok()
+        })
+    }
+}
+
+impl ScalarFieldWalkerExt for CompositeTypeFieldWalker<'_> {
+    fn native_type_instance(&self, connector: &dyn Connector) -> Option<NativeTypeInstance> {
+        self.raw_native_type().and_then(|(_, name, args, _)| {
+            connector
+                .parse_native_type(name, args.to_owned(), self.ast_field().span())
+                .ok()
+        })
+    }
+}
+
+impl ScalarFieldWalkerExt for IndexFieldWalker<'_> {
+    fn native_type_instance(&self, connector: &dyn Connector) -> Option<NativeTypeInstance> {
+        self.raw_native_type().and_then(|(_, name, args, _)| {
+            connector
+                .parse_native_type(name, args.to_owned(), self.ast_field().span())
                 .ok()
         })
     }

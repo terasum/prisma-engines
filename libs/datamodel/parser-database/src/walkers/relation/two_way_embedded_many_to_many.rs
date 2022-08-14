@@ -1,9 +1,7 @@
 use crate::{
     relations::{Relation, RelationAttributes},
-    walkers::{ModelWalker, RelationFieldWalker},
+    walkers::{ModelWalker, RelationFieldWalker, RelationWalker},
 };
-
-use super::RelationWalker;
 
 /// Describes an explicit m:n relation between two models. Both sides define
 /// `fields` which must be a single array scalar field, and `references` that
@@ -11,7 +9,7 @@ use super::RelationWalker;
 #[derive(Copy, Clone)]
 pub struct TwoWayEmbeddedManyToManyRelationWalker<'db>(pub(super) RelationWalker<'db>);
 
-impl<'ast, 'db> TwoWayEmbeddedManyToManyRelationWalker<'db> {
+impl<'db> TwoWayEmbeddedManyToManyRelationWalker<'db> {
     /// Gets the relation attributes from the AST.
     fn get(&self) -> &'db Relation {
         &self.0.db.relations[self.0.id]

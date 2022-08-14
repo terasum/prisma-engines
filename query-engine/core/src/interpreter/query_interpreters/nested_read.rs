@@ -7,7 +7,6 @@ use prisma_models::{FieldSelection, ManyRecords, Record, RelationFieldRef, Selec
 use prisma_value::PrismaValue;
 use std::collections::HashMap;
 
-#[tracing::instrument(skip(tx, query, parent_result, processor))]
 pub async fn m2m(
     tx: &mut dyn ConnectionLike,
     query: &RelatedRecordsQuery,
@@ -81,10 +80,13 @@ pub async fn m2m(
     let mut id_map: HashMap<SelectionResult, Vec<SelectionResult>> = HashMap::new();
 
     for (parent_id, child_id) in ids {
+        let parent_id = parent_id.coerce_values()?;
+        let child_id = child_id.coerce_values()?;
+
         match id_map.get_mut(&child_id) {
             Some(v) => v.push(parent_id),
             None => {
-                id_map.insert(child_id.coerce_values()?, vec![parent_id.coerce_values()?]);
+                id_map.insert(child_id, vec![parent_id]);
             }
         };
     }
@@ -130,15 +132,6 @@ pub async fn m2m(
 }
 
 // [DTODO] This is implemented in an inefficient fashion, e.g. too much Arc cloning going on.
-#[tracing::instrument(skip(
-    tx,
-    parent_field,
-    parent_selections,
-    parent_result,
-    query_args,
-    selected_fields,
-    processor
-))]
 #[allow(clippy::too_many_arguments)]
 pub async fn one2m(
     tx: &mut dyn ConnectionLike,

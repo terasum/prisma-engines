@@ -1,22 +1,23 @@
 use crate::{ConnectorTag, RunnerInterface, TestResult, TxResult};
 use prisma_models::InternalDataModelBuilder;
-use query_core::{executor, schema_builder, BuildMode, QueryExecutor, QuerySchemaRef, TxId};
+use query_core::{executor, schema::QuerySchemaRef, schema_builder, MetricRegistry, QueryExecutor, TxId};
 use request_handlers::{GraphQlBody, GraphQlHandler, MultiQuery};
 use std::{env, sync::Arc};
 
 pub(crate) type Executor = Box<dyn QueryExecutor + Send + Sync>;
 
-/// Direct engine runner.   
+/// Direct engine runner.
 pub struct DirectRunner {
     executor: Executor,
     query_schema: QuerySchemaRef,
     connector_tag: ConnectorTag,
     current_tx_id: Option<TxId>,
+    metrics: MetricRegistry,
 }
 
 #[async_trait::async_trait]
 impl RunnerInterface for DirectRunner {
-    async fn load(datamodel: String, connector_tag: ConnectorTag) -> TestResult<Self> {
+    async fn load(datamodel: String, connector_tag: ConnectorTag, metrics: MetricRegistry) -> TestResult<Self> {
         let config = datamodel::parse_configuration(&datamodel).unwrap().subject;
         let data_source = config.datasources.first().expect("No valid data source found");
         let preview_features: Vec<_> = config.preview_features().iter().collect();
@@ -26,7 +27,6 @@ impl RunnerInterface for DirectRunner {
 
         let query_schema: QuerySchemaRef = Arc::new(schema_builder::build(
             internal_data_model,
-            BuildMode::Modern,
             true,
             data_source.capabilities(),
             preview_features,
@@ -38,6 +38,7 @@ impl RunnerInterface for DirectRunner {
             query_schema,
             connector_tag,
             current_tx_id: None,
+            metrics,
         })
     }
 
@@ -58,10 +59,20 @@ impl RunnerInterface for DirectRunner {
         Ok(handler.handle(query, self.current_tx_id.clone(), None).await.into())
     }
 
-    async fn start_tx(&self, max_acquisition_millis: u64, valid_for_millis: u64) -> TestResult<TxId> {
+    async fn start_tx(
+        &self,
+        max_acquisition_millis: u64,
+        valid_for_millis: u64,
+        isolation_level: Option<String>,
+    ) -> TestResult<TxId> {
         let id = self
             .executor
-            .start_tx(self.query_schema.clone(), max_acquisition_millis, valid_for_millis)
+            .start_tx(
+                self.query_schema.clone(),
+                max_acquisition_millis,
+                valid_for_millis,
+                isolation_level,
+            )
             .await?;
         Ok(id)
     }
@@ -96,5 +107,9 @@ impl RunnerInterface for DirectRunner {
 
     fn clear_active_tx(&mut self) {
         self.current_tx_id = None;
+    }
+
+    fn get_metrics(&self) -> MetricRegistry {
+        self.metrics.clone()
     }
 }

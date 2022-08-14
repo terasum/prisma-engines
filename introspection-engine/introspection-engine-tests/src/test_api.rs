@@ -1,5 +1,7 @@
 pub use super::TestResult;
 pub use expect_test::expect;
+pub use indoc::{formatdoc, indoc};
+pub use quaint::prelude::Queryable;
 pub use test_macros::test_connector;
 pub use test_setup::{BitFlags, Capabilities, Tags};
 
@@ -11,10 +13,7 @@ use introspection_connector::{
     IntrospectionResult, Version,
 };
 use migration_connector::{ConnectorParams, MigrationConnector};
-use quaint::{
-    prelude::{Queryable, SqlFamily},
-    single::Quaint,
-};
+use quaint::{prelude::SqlFamily, single::Quaint};
 use sql_introspection_connector::SqlIntrospectionConnector;
 use sql_migration_connector::SqlMigrationConnector;
 use std::fmt::Write;
@@ -22,7 +21,7 @@ use test_setup::{sqlite_test_url, DatasourceBlock, TestApiArgs};
 use tracing::Instrument;
 
 pub struct TestApi {
-    api: SqlIntrospectionConnector,
+    pub api: SqlIntrospectionConnector,
     database: Quaint,
     args: TestApiArgs,
     connection_string: String,
@@ -64,7 +63,6 @@ impl TestApi {
                 q.raw_cmd(
                     r#"
                     SET default_int_size = 4;
-                    SET serial_normalization = 'sql_sequence';
                     "#,
                 )
                 .await
@@ -140,7 +138,6 @@ impl TestApi {
         self.preview_features
     }
 
-    #[tracing::instrument(skip(self))]
     #[track_caller]
     async fn test_introspect_internal(&self, data_model: Datamodel) -> ConnectorResult<IntrospectionResult> {
         let config = self.configuration();
@@ -258,7 +255,7 @@ impl TestApi {
             self.args
                 .datasource_block(&self.connection_string, &[("referentialIntegrity", r#""prisma""#)])
         } else {
-            self.args.datasource_block(&self.connection_string, &[])
+            self.args.datasource_block(r#"env(TEST_DATABASE_URL)"#, &[])
         }
     }
 
@@ -266,6 +263,21 @@ impl TestApi {
         datamodel::parse_configuration(&format!("{}\n{}", &self.datasource_block(), &self.generator_block()))
             .unwrap()
             .subject
+    }
+
+    #[track_caller]
+    pub async fn expect_datamodel(&self, expectation: &expect_test::Expect) {
+        let found = self.introspect().await.unwrap();
+        expectation.assert_eq(&found);
+    }
+
+    #[track_caller]
+    pub async fn expect_re_introspected_datamodel(&self, schema: &str, expectation: expect_test::Expect) {
+        let config = self.configuration();
+        let data_model = parse_datamodel(schema);
+        let reintrospected = self.test_introspect_internal(data_model).await.unwrap();
+        let found = datamodel::render_datamodel_to_string(&reintrospected.data_model, Some(&config));
+        expectation.assert_eq(&found);
     }
 
     #[track_caller]

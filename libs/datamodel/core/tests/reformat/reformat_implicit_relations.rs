@@ -1,9 +1,4 @@
-use expect_test::expect;
-use indoc::indoc;
-
-fn reformat(input: &str) -> String {
-    datamodel::reformat(input, 2).unwrap_or_else(|_| input.to_owned())
-}
+use crate::common::*;
 
 #[test]
 fn native_types_in_missing_back_relation_fields() {
@@ -906,6 +901,7 @@ fn should_add_back_relations_for_more_complex_cases() {
 
           post     Post     @relation(fields: [postId], references: [post_id])
           category Category @relation(fields: [categoryId], references: [category_id])
+
           @@map("post_to_category")
         }
     "#]];
@@ -1029,8 +1025,8 @@ fn should_not_get_confused_with_complicated_self_relations() {
     let input = indoc! {r#"
         model Human {
           id        Int  @id
-          husbandId Int?
-          fatherId  Int?
+          husbandId Int? @unique
+          fatherId  Int? @unique
           parentId  Int?
 
           wife    Human? @relation("Marrige")
@@ -1283,4 +1279,54 @@ fn mongodb_inline_relations_reformat_as_expected() {
     "#]];
 
     expected.assert_eq(&reformat(schema));
+}
+
+#[test]
+fn reformat_missing_forward_relation_arguments_with_crln() {
+    let schema = r#"
+    generator client {
+      provider = "prisma-client-js"
+      output   = "../generated/client"
+    }
+
+    datasource db {
+      provider = "sqlite"
+      url      = "file:dev.db"
+    }
+
+    model Post {
+      id     Int @id
+      user   User
+    }
+
+    model User {
+      id     Int @id
+      posts  Post[]
+    }
+    "#;
+
+    let expected = expect![[r#"
+        generator client {
+          provider = "prisma-client-js"
+          output   = "../generated/client"
+        }
+
+        datasource db {
+          provider = "sqlite"
+          url      = "file:dev.db"
+        }
+
+        model Post {
+          id     Int  @id
+          user   User @relation(fields: [userId], references: [id])
+          userId Int
+        }
+
+        model User {
+          id    Int    @id
+          posts Post[]
+        }
+    "#]];
+
+    expected.assert_eq(&reformat(&schema.replace('\n', "\r\n")));
 }

@@ -131,7 +131,6 @@ fn test_create_database(api: TestApi) {
     assert!(output.status.success(), "{:#?}", output);
 
     let output = api.run(&["--datasource", &connection_string, "create-database"]);
-    dbg!(&output);
     assert!(output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Database 'test_create_database\' was successfully created."));
@@ -144,7 +143,6 @@ fn test_create_database(api: TestApi) {
 fn test_create_database_mssql(api: TestApi) {
     let connection_string = api
         .connection_string()
-        .replace("master", "masterNEW")
         .replace("test_create_database_mssql", "test_create_database_NEW");
 
     let output = api.run(&["--datasource", &connection_string, "drop-database"]);
@@ -154,7 +152,7 @@ fn test_create_database_mssql(api: TestApi) {
     assert!(output.status.success());
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Database 'masterNEW\' was successfully created."));
+    assert!(stderr.contains("Database 'test_create_database_NEW\' was successfully created."));
 
     let output = api.run(&["--datasource", &connection_string, "can-connect-to-database"]);
     assert!(output.status.success());
@@ -199,7 +197,6 @@ fn test_drop_sqlite_database(api: TestApi) {
 #[test_connector(tags(Postgres, Mysql))]
 fn test_drop_database(api: TestApi) {
     let connection_string = api.connection_string();
-    drop(api);
     let output = run(&["--datasource", &connection_string, "drop-database"]);
     assert!(output.status.success(), "{:#?}", output);
 

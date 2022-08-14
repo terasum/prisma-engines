@@ -23,7 +23,13 @@ pub struct ConnectorTestArgs {
     pub exclude: ExcludeConnectorTags,
 
     #[darling(default)]
+    pub exclude_features: ExcludeFeatures,
+
+    #[darling(default)]
     pub capabilities: RunOnlyForCapabilities,
+
+    #[darling(default)]
+    pub referential_integrity: Option<ReferentialIntegrity>,
 }
 
 impl ConnectorTestArgs {
@@ -42,6 +48,32 @@ impl ConnectorTestArgs {
     /// Returns all the connectors that the test is valid for.
     pub fn connectors_to_test(&self) -> Vec<ConnectorTag> {
         connectors_to_test(&self.only, &self.exclude)
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub enum ReferentialIntegrity {
+    ForeignKeys,
+    Prisma,
+}
+
+impl darling::FromMeta for ReferentialIntegrity {
+    fn from_string(value: &str) -> darling::Result<Self> {
+        match value.to_lowercase().as_str() {
+            "prisma" => Ok(Self::Prisma),
+            "foreignkeys" => Ok(Self::ForeignKeys),
+            _ => Err(darling::Error::custom(format!("Invalid value: {}", value))),
+        }
+    }
+}
+
+impl ToString for ReferentialIntegrity {
+    fn to_string(&self) -> String {
+        match self {
+            ReferentialIntegrity::Prisma => "prisma".to_string(),
+            ReferentialIntegrity::ForeignKeys => "foreignKeys".to_string(),
+        }
     }
 }
 
@@ -90,6 +122,17 @@ impl OnlyConnectorTags {
 }
 
 #[derive(Debug, Default)]
+pub struct ExcludeFeatures {
+    features: Vec<String>,
+}
+
+impl ExcludeFeatures {
+    pub fn features(&self) -> &[String] {
+        self.features.as_ref()
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct ExcludeConnectorTags {
     tags: Vec<ConnectorTag>,
 }
@@ -101,6 +144,29 @@ impl ExcludeConnectorTags {
 
     pub fn tags(&self) -> &[ConnectorTag] {
         &self.tags
+    }
+}
+
+impl darling::FromMeta for ExcludeFeatures {
+    fn from_list(items: &[syn::NestedMeta]) -> Result<Self, darling::Error> {
+        let features = items
+            .iter()
+            .map(|i| match i {
+                syn::NestedMeta::Meta(m) => Err(darling::Error::unexpected_type(
+                    "Preview features can only be string literals.",
+                )
+                .with_span(&m.span())),
+                syn::NestedMeta::Lit(l) => match l {
+                    syn::Lit::Str(s) => Ok(s.value()),
+                    _ => Err(
+                        darling::Error::unexpected_type("Preview features can only be string literals.")
+                            .with_span(&l.span()),
+                    ),
+                },
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(ExcludeFeatures { features })
     }
 }
 

@@ -43,7 +43,6 @@ macro_rules! capabilities {
 capabilities!(
     // General capabilities, not specific to any part of Prisma.
     ScalarLists,
-    RelationsOverNonUniqueCriteria,
     Enums,
     EnumArrayPush,
     Json,
@@ -64,10 +63,10 @@ capabilities!(
     NamedDefaultValues,
     IndexColumnLengthPrefixing,
     PrimaryKeySortOrderDefinition,
-    UsingHashIndex,
     FullTextIndex,
     SortOrderInFullTextIndex,
     MultipleFullTextAttributesPerModel,
+    ClusteringSetting,
     // Start of query-engine-only Capabilities
     InsensitiveFilters,
     CreateMany,
@@ -85,8 +84,17 @@ capabilities!(
     MongoDbQueryRaw,
     FullTextSearchWithoutIndex,
     FullTextSearchWithIndex,
-    AdvancedJsonNullability, // Database distinguishes between their null type and JSON null.
-    UndefinedType,           // Database distinguishes `null` and `undefined`
+    AdvancedJsonNullability,    // Connector distinguishes between their null type and JSON null.
+    UndefinedType,              // Connector distinguishes `null` and `undefined`
+    DecimalType,                // Connector supports Prisma Decimal type.
+    BackwardCompatibleQueryRaw, // Temporary SQLite specific capability. Should be removed once https://github.com/prisma/prisma/issues/12784 is fixed,
+    OrderByNullsFirstLast,      // Connector supports ORDER BY NULLS LAST/FIRST
+    // Block of isolation levels.
+    SupportsTxIsolationReadUncommitted,
+    SupportsTxIsolationReadCommitted,
+    SupportsTxIsolationRepeatableRead,
+    SupportsTxIsolationSerializable,
+    SupportsTxIsolationSnapshot,
 );
 
 /// Contains all capabilities that the connector is able to serve.

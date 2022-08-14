@@ -2,22 +2,42 @@ use super::{
     Attribute, Comment, Identifier, Span, WithAttributes, WithDocumentation, WithIdentifier, WithName, WithSpan,
 };
 
+/// A field definition in a model or a composite type.
 #[derive(Debug, Clone)]
 pub struct Field {
     /// The field's type.
+    ///
+    /// ```ignore
+    /// name String
+    ///      ^^^^^^
+    /// ```
     pub field_type: FieldType,
     /// The name of the field.
-    pub name: Identifier,
-    /// The aritiy of the field.
+    ///
+    /// ```ignore
+    /// name String
+    /// ^^^^
+    /// ```
+    pub(crate) name: Identifier,
+    /// The arity of the field.
     pub arity: FieldArity,
     /// The attributes of this field.
+    ///
+    /// ```ignore
+    /// name String @id @default("lol")
+    ///             ^^^^^^^^^^^^^^^^^^^
+    /// ```
     pub attributes: Vec<Attribute>,
     /// The comments for this field.
-    pub documentation: Option<Comment>,
+    ///
+    /// ```ignore
+    /// /// Lorem ipsum
+    ///     ^^^^^^^^^^^
+    /// name String @id @default("lol")
+    /// ```
+    pub(crate) documentation: Option<Comment>,
     /// The location of this field in the text representation.
-    pub span: Span,
-    /// The location of this field in the text representation.
-    pub is_commented_out: bool,
+    pub(crate) span: Span,
 }
 
 impl Field {
@@ -54,8 +74,8 @@ impl WithIdentifier for Field {
 }
 
 impl WithSpan for Field {
-    fn span(&self) -> &Span {
-        &self.span
+    fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -66,19 +86,33 @@ impl WithAttributes for Field {
 }
 
 impl WithDocumentation for Field {
-    fn documentation(&self) -> &Option<Comment> {
-        &self.documentation
-    }
-
-    fn is_commented_out(&self) -> bool {
-        self.is_commented_out
+    fn documentation(&self) -> Option<&str> {
+        self.documentation.as_ref().map(|doc| doc.text.as_str())
     }
 }
 
+/// An arity of a data model field.
 #[derive(Copy, Debug, Clone, PartialEq)]
 pub enum FieldArity {
+    /// The field either must be in an insert statement, or the field must have
+    /// a default value for the insert to succeed.
+    ///
+    /// ```ignore
+    /// name String
+    /// ```
     Required,
+    /// The field does not need to be in an insert statement for the write to
+    /// succeed.
+    ///
+    /// ```ignore
+    /// name String?
+    /// ```
     Optional,
+    /// The field can have multiple values stored in the same column.
+    ///
+    /// ```ignore
+    /// name String[]
+    /// ```
     List,
 }
 
@@ -99,6 +133,7 @@ impl FieldArity {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldType {
     Supported(Identifier),
+    /// Unsupported("...")
     Unsupported(String, Span),
 }
 

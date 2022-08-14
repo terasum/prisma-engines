@@ -29,7 +29,6 @@ pub mod walkers;
 
 mod attributes;
 mod context;
-mod indexes;
 mod interner;
 mod names;
 mod relations;
@@ -38,8 +37,8 @@ mod value_validator;
 
 pub use names::is_reserved_type_name;
 pub use relations::ReferentialAction;
-pub use schema_ast::ast;
-pub use types::{IndexAlgorithm, IndexType, ScalarFieldType, ScalarType, SortOrder};
+pub use schema_ast::{ast, SourceFile};
+pub use types::{IndexAlgorithm, IndexFieldPath, IndexType, OperatorClass, ScalarFieldType, ScalarType, SortOrder};
 pub use value_validator::{ValueListValidator, ValueValidator};
 
 use self::{context::Context, interner::StringId, relations::Relations, types::Types};
@@ -67,6 +66,7 @@ use names::Names;
 ///   Currently only index name collisions.
 pub struct ParserDatabase {
     ast: ast::SchemaAst,
+    file: schema_ast::SourceFile,
     interner: interner::StringInterner,
     _names: Names,
     types: Types,
@@ -75,7 +75,9 @@ pub struct ParserDatabase {
 
 impl ParserDatabase {
     /// See the docs on [ParserDatabase](/struct.ParserDatabase.html).
-    pub fn new(ast: ast::SchemaAst, diagnostics: &mut Diagnostics) -> Self {
+    pub fn new(file: schema_ast::SourceFile, diagnostics: &mut Diagnostics) -> Self {
+        let ast = schema_ast::parse_schema(file.as_str(), diagnostics);
+
         let mut interner = Default::default();
         let mut names = Default::default();
         let mut types = Default::default();
@@ -89,6 +91,7 @@ impl ParserDatabase {
         if ctx.diagnostics.has_errors() {
             return ParserDatabase {
                 ast,
+                file,
                 interner,
                 _names: names,
                 types,
@@ -103,6 +106,7 @@ impl ParserDatabase {
         if ctx.diagnostics.has_errors() {
             return ParserDatabase {
                 ast,
+                file,
                 interner,
                 _names: names,
                 types,
@@ -118,11 +122,9 @@ impl ParserDatabase {
         // Fourth step: relation inference
         relations::infer_relations(&mut ctx);
 
-        // Fifth step: infer implicit indices
-        indexes::infer_implicit_indexes(&mut ctx);
-
         ParserDatabase {
             ast,
+            file,
             interner,
             _names: names,
             types,
@@ -130,14 +132,19 @@ impl ParserDatabase {
         }
     }
 
-    /// The fully resolved (non alias) scalar field type of an alias. .
-    pub fn alias_scalar_field_type(&self, alias_id: &ast::AliasId) -> &ScalarFieldType {
-        &self.types.type_aliases[alias_id]
-    }
-
     /// The parsed AST.
     pub fn ast(&self) -> &ast::SchemaAst {
         &self.ast
+    }
+
+    /// The total number of models.
+    pub fn models_count(&self) -> usize {
+        self.types.model_attributes.len()
+    }
+
+    /// The source file contents.
+    pub fn source(&self) -> &str {
+        self.file.as_str()
     }
 }
 

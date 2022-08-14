@@ -1,12 +1,13 @@
 use crate::sql_trace::SqlTraceComment;
 use crate::{error::SqlError, model_extensions::*, query_builder::write, sql_info::SqlInfo, QueryExt};
 use connector_interface::*;
+use datamodel::common::preview_features::PreviewFeature;
 use itertools::Itertools;
 use prisma_models::*;
 use prisma_value::PrismaValue;
 use quaint::{
     error::ErrorKind,
-    prelude::{native_uuid, uuid_to_bin, Aliasable, Select, SqlFamily},
+    prelude::{native_uuid, uuid_to_bin, uuid_to_bin_swapped, Aliasable, Select, SqlFamily},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -20,12 +21,13 @@ async fn generate_id(
     conn: &dyn QueryExt,
     primary_key: &FieldSelection,
     trace_id: Option<String>,
+    args: &WriteArgs,
 ) -> crate::Result<Option<SelectionResult>> {
     // Go through all the values and generate a select statement with the correct MySQL function
     let (pk_select, need_select) = primary_key
         .selections()
         .filter_map(|field| match field {
-            SelectedField::Scalar(x) if x.default_value.is_some() => x
+            SelectedField::Scalar(x) if x.default_value.is_some() && !args.has_arg_for(x.db_name()) => x
                 .default_value
                 .clone()
                 .unwrap()
@@ -39,7 +41,8 @@ async fn generate_id(
 
             match func.as_str() {
                 "(uuid())" => (query.value(native_uuid().alias(alias)), true),
-                "(uuid_to_bin(uuid()))" => (query.value(uuid_to_bin().alias(alias)), true),
+                "(uuid_to_bin(uuid()))" | "(uuid_to_bin(uuid(),0))" => (query.value(uuid_to_bin().alias(alias)), true),
+                "(uuid_to_bin(uuid(),1))" => (query.value(uuid_to_bin_swapped().alias(alias)), true),
                 _ => (query, generated),
             }
         });
@@ -58,7 +61,6 @@ async fn generate_id(
 
 /// Create a single record to the database defined in `conn`, resulting into a
 /// `RecordProjection` as an identifier pointing to the just-created record.
-#[tracing::instrument(skip(conn, model, args))]
 pub async fn create_record(
     conn: &dyn QueryExt,
     sql_family: &SqlFamily,
@@ -69,7 +71,7 @@ pub async fn create_record(
     let pk = model.primary_identifier();
 
     let returned_id = if *sql_family == SqlFamily::Mysql {
-        generate_id(conn, &pk, trace_id.clone()).await?
+        generate_id(conn, &pk, trace_id.clone(), &args).await?
     } else {
         args.as_record_projection(pk.clone().into())
     };
@@ -150,7 +152,6 @@ pub async fn create_record(
     }
 }
 
-#[tracing::instrument(skip(conn, sql_info, model, args, skip_duplicates))]
 pub async fn create_records(
     conn: &dyn QueryExt,
     sql_info: SqlInfo,
@@ -299,7 +300,6 @@ async fn create_many_empty(
 /// Update multiple records in a database defined in `conn` and the records
 /// defined in `args`, resulting the identifiers that were modified in the
 /// operation.
-#[tracing::instrument(skip(conn, model, record_filter, args))]
 pub async fn update_records(
     conn: &dyn QueryExt,
     model: &ModelRef,
@@ -327,7 +327,6 @@ pub async fn update_records(
 }
 
 /// Delete multiple records in `conn`, defined in the `Filter`. Result is the number of items deleted.
-#[tracing::instrument(skip(conn, model, record_filter))]
 pub async fn delete_records(
     conn: &dyn QueryExt,
     model: &ModelRef,
@@ -351,7 +350,6 @@ pub async fn delete_records(
 
 /// Connect relations defined in `child_ids` to a parent defined in `parent_id`.
 /// The relation information is in the `RelationFieldRef`.
-#[tracing::instrument(skip(conn, field, parent_id, child_ids))]
 pub async fn m2m_connect(
     conn: &dyn QueryExt,
     field: &RelationFieldRef,
@@ -366,7 +364,6 @@ pub async fn m2m_connect(
 
 /// Disconnect relations defined in `child_ids` to a parent defined in `parent_id`.
 /// The relation information is in the `RelationFieldRef`.
-#[tracing::instrument(skip(conn, field, parent_id, child_ids))]
 pub async fn m2m_disconnect(
     conn: &dyn QueryExt,
     field: &RelationFieldRef,
@@ -382,18 +379,25 @@ pub async fn m2m_disconnect(
 
 /// Execute a plain SQL query with the given parameters, returning the number of
 /// affected rows.
-#[tracing::instrument(skip(conn, inputs))]
-pub async fn execute_raw(conn: &dyn QueryExt, inputs: HashMap<String, PrismaValue>) -> crate::Result<usize> {
-    let value = conn.raw_count(inputs).await?;
+pub async fn execute_raw(
+    conn: &dyn QueryExt,
+    features: &[PreviewFeature],
+    inputs: HashMap<String, PrismaValue>,
+) -> crate::Result<usize> {
+    let value = conn.raw_count(inputs, features).await?;
 
     Ok(value)
 }
 
 /// Execute a plain SQL query with the given parameters, returning the answer as
 /// a JSON `Value`.
-#[tracing::instrument(skip(conn, inputs))]
-pub async fn query_raw(conn: &dyn QueryExt, inputs: HashMap<String, PrismaValue>) -> crate::Result<serde_json::Value> {
-    let value = conn.raw_json(inputs).await?;
+pub async fn query_raw(
+    conn: &dyn QueryExt,
+    sql_info: SqlInfo,
+    features: &[PreviewFeature],
+    inputs: HashMap<String, PrismaValue>,
+) -> crate::Result<serde_json::Value> {
+    let value = conn.raw_json(sql_info, features, inputs).await?;
 
     Ok(value)
 }

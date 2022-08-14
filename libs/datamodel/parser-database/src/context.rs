@@ -3,9 +3,9 @@ mod attributes;
 use self::attributes::AttributesValidationState;
 use crate::{
     ast, interner::StringInterner, names::Names, relations::Relations, types::Types, DatamodelError, Diagnostics,
-    ScalarFieldType, StringId, ValueValidator,
+    StringId, ValueValidator,
 };
-use schema_ast::ast::WithName;
+use schema_ast::ast::{Expression, WithName};
 use std::collections::{HashMap, HashSet};
 
 /// Validation context. This is an implementation detail of ParserDatabase. It
@@ -90,7 +90,9 @@ impl<'db> Context<'db> {
 
     pub(crate) fn push_attribute_validation_error(&mut self, message: &str) {
         let attribute = self.current_attribute();
-        let err = DatamodelError::new_attribute_validation_error(message, attribute.name(), attribute.span);
+
+        let err =
+            DatamodelError::new_attribute_validation_error(message, &format!("@{}", attribute.name()), attribute.span);
         self.push_error(err);
     }
 
@@ -102,17 +104,8 @@ impl<'db> Context<'db> {
     ///
     /// Other than for this peculiarity, this method is identical to
     /// `visit_attributes()`.
-    pub(super) fn visit_scalar_field_attributes(
-        &mut self,
-        model_id: ast::ModelId,
-        field_id: ast::FieldId,
-        mut scalar_field_type: ScalarFieldType,
-    ) {
+    pub(super) fn visit_scalar_field_attributes(&mut self, model_id: ast::ModelId, field_id: ast::FieldId) {
         self.visit_attributes((model_id, field_id).into());
-        while let ScalarFieldType::Alias(alias_id) = scalar_field_type {
-            self.attributes.extend_attributes(alias_id.into(), self.ast);
-            scalar_field_type = self.types.type_aliases[&alias_id];
-        }
     }
 
     /// All attribute validation should go through `visit_attributes()`. It lets
@@ -287,10 +280,7 @@ impl<'db> Context<'db> {
         let diagnostics = &mut self.diagnostics;
         for arg_idx in self.attributes.args.values() {
             let arg = &attr.arguments.arguments[*arg_idx];
-            diagnostics.push_error(DatamodelError::new_unused_argument_error(
-                arg.name.as_ref().map(|n| n.name.as_str()).unwrap_or(""),
-                arg.span,
-            ));
+            diagnostics.push_error(DatamodelError::new_unused_argument_error(arg.span));
         }
 
         self.discard_arguments();
@@ -327,6 +317,20 @@ impl<'db> Context<'db> {
         self.names.model_fields.get(&(model_id, name)).cloned()
     }
 
+    /// Find a specific field in a specific composite type.
+    pub(crate) fn find_composite_type_field(
+        &self,
+        composite_type_id: ast::CompositeTypeId,
+        field_name: &str,
+    ) -> Option<ast::FieldId> {
+        let name = self.interner.lookup(field_name)?;
+
+        self.names
+            .composite_type_fields
+            .get(&(composite_type_id, name))
+            .cloned()
+    }
+
     /// Starts validating the arguments for an attribute, checking for duplicate arguments in the
     /// process. Returns whether the attribute is valid enough to be usable.
     fn set_attribute(&mut self, attribute_id: ast::AttributeId, attribute: &'db ast::Attribute) -> bool {
@@ -351,16 +355,38 @@ impl<'db> Context<'db> {
                 for arg in &args.empty_arguments {
                     self.push_error(DatamodelError::new_attribute_validation_error(
                         &format!("The `{}` argument is missing a value.", arg.name.name),
-                        attribute.name(),
+                        &format!("@{}", attribute.name()),
                         arg.name.span,
                     ));
                     is_reasonably_valid = false;
                 }
 
+                for arg in args.arguments.iter() {
+                    let exprs = match arg.value {
+                        Expression::Array(ref exprs, _) => exprs,
+                        _ => continue,
+                    };
+
+                    for expr in exprs {
+                        let args = match expr {
+                            Expression::Function(_, args, _) => args,
+                            _ => continue,
+                        };
+
+                        for arg in args.empty_arguments.iter() {
+                            self.push_error(DatamodelError::new_attribute_validation_error(
+                                &format!("The `{}` argument is missing a value.", arg.name.name),
+                                &format!("@@{}", attribute.name()),
+                                arg.name.span,
+                            ));
+                        }
+                    }
+                }
+
                 if let Some(span) = args.trailing_comma {
                     self.push_error(DatamodelError::new_attribute_validation_error(
                         "Trailing commas are not valid in attribute arguments, please remove the comma.",
-                        attribute.name(),
+                        &format!("@{}", attribute.name()),
                         span,
                     ))
                 }
@@ -383,12 +409,10 @@ impl<'db> Context<'db> {
                 if arg.is_unnamed() {
                     if unnamed_arguments.is_empty() {
                         let existing_arg_value = &attribute.arguments.arguments[existing_argument].value;
-                        let rendered = schema_ast::renderer::Renderer::render_value_to_string(existing_arg_value);
-                        unnamed_arguments.push(rendered)
+                        unnamed_arguments.push(existing_arg_value.to_string())
                     }
 
-                    let rendered = schema_ast::renderer::Renderer::render_value_to_string(&arg.value);
-                    unnamed_arguments.push(rendered)
+                    unnamed_arguments.push(arg.value.to_string())
                 } else {
                     self.push_error(DatamodelError::new_duplicate_argument_error(
                         &arg.name.as_ref().unwrap().name,

@@ -2,7 +2,7 @@ use crate::common::*;
 use indoc::indoc;
 
 fn reformat(input: &str) -> String {
-    datamodel::reformat(input, 2).unwrap_or_else(|_| input.to_owned())
+    datamodel::reformat(input, 2).unwrap_or_else(|| input.to_owned())
 }
 
 #[test]
@@ -283,8 +283,8 @@ fn end_of_line_comments_must_not_influence_table_layout_in_enums() {
 
     let expected = expect![[r#"
         enum Foo {
-          ONE  @map("short") // COMMENT 1
-          TWO  @map("a_very_long_name") // COMMENT 2
+          ONE @map("short") // COMMENT 1
+          TWO @map("a_very_long_name") // COMMENT 2
         }
     "#]];
 
@@ -420,8 +420,8 @@ fn test_floating_doc_comments_1() {
         model a {
           one Int
           two Int
-          // bs  b[] @relation(references: [a])
 
+          // bs  b[] @relation(references: [a])
           @@id([one, two])
         }
 
@@ -480,12 +480,12 @@ fn reformatting_enums_must_work() {
 
     let expected = expect![[r#"
         enum Colors {
-          RED    @map("rett")
+          RED   @map("rett")
           BLUE
           GREEN
 
           // comment
-          ORANGE_AND_KIND_OF_RED  @map("super_color")
+          ORANGE_AND_KIND_OF_RED @map("super_color")
 
           @@map("the_colors")
         }
@@ -629,7 +629,7 @@ fn incomplete_field_definitions_in_a_model_must_not_get_removed() {
 }
 
 #[test]
-fn new_lines_inside_block_above_field_must_stay() {
+fn new_lines_inside_block_above_field_must_go_away() {
     let input = indoc! {r#"
         model Post {
 
@@ -642,10 +642,6 @@ fn new_lines_inside_block_above_field_must_stay() {
 
     let expected = expect![[r#"
         model Post {
-
-
-
-
           id Int @id @default(autoincrement())
         }
     "#]];
@@ -654,7 +650,7 @@ fn new_lines_inside_block_above_field_must_stay() {
 }
 
 #[test]
-fn new_lines_inside_block_below_field_must_stay() {
+fn new_lines_inside_block_below_field_must_go_away() {
     let input = indoc! {r#"
         model Post {
           id Int @id @default(autoincrement())
@@ -668,10 +664,6 @@ fn new_lines_inside_block_below_field_must_stay() {
     let expected = expect![[r#"
         model Post {
           id Int @id @default(autoincrement())
-
-
-
-
         }
     "#]];
 
@@ -679,7 +671,7 @@ fn new_lines_inside_block_below_field_must_stay() {
 }
 
 #[test]
-fn new_lines_inside_block_in_between_fields_must_stay() {
+fn new_lines_inside_block_in_between_fields_must_go_away() {
     let input = indoc! {r#"
         model Post {
           id Int @id @default(autoincrement())
@@ -694,9 +686,7 @@ fn new_lines_inside_block_in_between_fields_must_stay() {
         model Post {
           id Int @id @default(autoincrement())
 
-
           input String
-
         }
     "#]];
 
@@ -792,14 +782,6 @@ fn multiple_new_lines_between_top_level_elements_must_be_reduced_to_a_single_one
         // free floating comment
         /// free floating doc comment
 
-        // type alias comment
-        /// type alias doc comment
-        type MyString = String          @default("FooBar")
-
-
-        // free floating comment
-        /// free floating doc comment
-
         // generator comment
         /// generator doc comment
         generator js {
@@ -817,7 +799,6 @@ fn multiple_new_lines_between_top_level_elements_must_be_reduced_to_a_single_one
         }
     "#};
 
-    // TODO: the formatting of the type alias is not nice
     let expected = expect![[r#"
         model Post {
           id Int @id
@@ -851,13 +832,6 @@ fn multiple_new_lines_between_top_level_elements_must_be_reduced_to_a_single_one
           ACTIVE
           DONE
         }
-
-        // free floating comment
-        /// free floating doc comment
-
-        // type alias comment
-        /// type alias doc comment
-        type                       MyString = String @default("FooBar")
 
         // free floating comment
         /// free floating doc comment
@@ -922,6 +896,7 @@ fn incomplete_last_line_must_not_stop_reformatting() {
         model User {
           id Int @id
         }
+
         model Bl
     "#]];
 
@@ -1062,7 +1037,6 @@ fn reformatting_extended_indexes_works() {
         generator client {
           provider        = "prisma-client-js"
           binaryTargets   = ["darwin"]
-          previewFeatures = ["extendedIndexes"]
         }
         
         datasource db {
@@ -1094,9 +1068,8 @@ fn reformatting_extended_indexes_works() {
 
     let expected = expect![[r#"
         generator client {
-          provider        = "prisma-client-js"
-          binaryTargets   = ["darwin"]
-          previewFeatures = ["extendedIndexes"]
+          provider      = "prisma-client-js"
+          binaryTargets = ["darwin"]
         }
 
         datasource db {
@@ -1134,7 +1107,7 @@ fn reformatting_with_empty_indexes() {
     let schema = r#"
         generator js {
           provider        = "prisma-client-js"
-          previewFeatures = ["fullTextIndex", "extendedIndexes"]
+          previewFeatures = ["fullTextIndex"]
         }
 
         datasource db {
@@ -1156,7 +1129,7 @@ fn reformatting_with_empty_indexes() {
     let expected = expect![[r#"
         generator js {
           provider        = "prisma-client-js"
-          previewFeatures = ["fullTextIndex", "extendedIndexes"]
+          previewFeatures = ["fullTextIndex"]
         }
 
         datasource db {
@@ -1329,6 +1302,198 @@ fn composite_type_native_types_roundtrip() {
         model User {
           id      String   @id @default(dbgenerated()) @map("_id") @db.ObjectId
           address Address?
+        }
+    "#]];
+
+    expected.assert_eq(&reformat(schema));
+}
+
+#[test]
+fn removes_legacy_colon_from_fields() {
+    let input = indoc! {r#"
+        model Site {
+          name: String
+          htmlTitle: String
+        }
+    "#};
+
+    let expected = expect![[r#"
+        model Site {
+          name      String
+          htmlTitle String
+        }
+    "#]];
+
+    expected.assert_eq(&reformat(input));
+}
+
+#[test]
+fn rewrites_legacy_list_and_required_type_arities() {
+    let input = indoc! {r#"
+        model Site {
+          name String!
+          htmlTitles [String]
+        }
+    "#};
+
+    let expected = expect![[r#"
+        model Site {
+          name       String
+          htmlTitles String[]
+        }
+    "#]];
+
+    expected.assert_eq(&reformat(input));
+}
+
+#[test]
+fn reformatting_optional_list_fields_works() {
+    let schema = r#"
+        model Pizza {
+            id Int @id
+            toppings String[]?
+            prices Int[]? @default([3, 6, 9])
+        }
+    "#;
+
+    let expected = expect![[r#"
+        model Pizza {
+          id       Int       @id
+          toppings String[]?
+          prices   Int[]?    @default([3, 6, 9])
+        }
+    "#]];
+
+    expected.assert_eq(&reformat(schema));
+}
+
+#[test]
+fn attribute_arguments_reformatting_is_idempotent() {
+    let schema = r#"
+        generator client {
+          provider        = "prisma-client-js"
+          previewFeatures = "mongodb"
+        }
+
+        datasource db {
+          provider = "mongodb"
+          url      = "m...ty"
+        }
+
+        model Foo {
+          id       String   @id @default(auto()) @map("_id") @db.ObjectId
+          name     String   @unique
+          json     Json
+          bar      Bar
+          bars     Bar[]
+          baz      Baz      @relation(fields: [bazId], references: [id])
+          bazId    String   @db.ObjectId
+          list     String[]
+          jsonList Json[]
+        }
+
+        type Bar {
+          label  String
+          number Int
+        }
+
+        model Baz {
+          id  String @id @default(auto()) @map("_id") @db.ObjectId
+          foo Foo?
+        }
+    "#;
+
+    let expected = expect![[r#"
+        generator client {
+          provider        = "prisma-client-js"
+          previewFeatures = "mongodb"
+        }
+
+        datasource db {
+          provider = "mongodb"
+          url      = "m...ty"
+        }
+
+        model Foo {
+          id       String   @id @default(auto()) @map("_id") @db.ObjectId
+          name     String   @unique
+          json     Json
+          bar      Bar
+          bars     Bar[]
+          baz      Baz      @relation(fields: [bazId], references: [id])
+          bazId    String   @db.ObjectId
+          list     String[]
+          jsonList Json[]
+        }
+
+        type Bar {
+          label  String
+          number Int
+        }
+
+        model Baz {
+          id  String @id @default(auto()) @map("_id") @db.ObjectId
+          foo Foo?
+        }
+    "#]];
+    let reformatted = reformat(schema);
+    expected.assert_eq(&reformatted);
+    assert_eq!(reformatted, reformat(&reformatted)); // it's idempotent
+}
+
+#[test]
+fn block_attribute_comments_are_preserved() {
+    let schema = r#"
+        model MyModel {
+          // Example Comment
+          field1 Int // Comment Field 1
+          field2 Int // Comment Field 2
+          field3 Int // Comment Field 3
+
+          // This comment should stay here.
+          @@unique([field1, field2]) // younique
+
+          // This one must stay too.
+          @@unique([field1, field3]) // there too
+        }
+
+        type YourType {
+          // Example Comment
+          field1 Int // Comment Field 1
+          field2 Int // Comment Field 2
+          field3 Int // Comment Field 3
+
+          // This comment should stay here.
+          @@unique([field1, field2]) // younique
+
+          // This one must stay too.
+          @@unique([field1, field3]) // there too
+        }
+    "#;
+
+    let expected = expect![[r#"
+        model MyModel {
+          // Example Comment
+          field1 Int // Comment Field 1
+          field2 Int // Comment Field 2
+          field3 Int // Comment Field 3
+
+          // This comment should stay here.
+          @@unique([field1, field2]) // younique
+          // This one must stay too.
+          @@unique([field1, field3]) // there too
+        }
+
+        type YourType {
+          // Example Comment
+          field1 Int // Comment Field 1
+          field2 Int // Comment Field 2
+          field3 Int // Comment Field 3
+
+          // This comment should stay here.
+          @@unique([field1, field2]) // younique
+          // This one must stay too.
+          @@unique([field1, field3]) // there too
         }
     "#]];
 

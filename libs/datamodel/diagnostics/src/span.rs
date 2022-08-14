@@ -21,18 +21,9 @@ impl Span {
         position >= self.start && position <= self.end
     }
 
-    /// Adds an offset to a span.
-    pub fn lift_span(&self, offset: usize) -> Span {
-        Span {
-            start: offset + self.start,
-            end: offset + self.end,
-        }
-    }
-}
-
-impl std::fmt::Display for Span {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{} - {}]", self.start, self.end)
+    /// Is the given span overlapping with the current span.
+    pub fn overlaps(self, other: Span) -> bool {
+        self.contains(other.start) || self.contains(other.end)
     }
 }
 

@@ -18,10 +18,14 @@ fn basic_unique_index_must_work() {
     user_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("User_firstName_lastName_key".to_string()),
-        fields: vec![IndexField::new("firstName"), IndexField::new("lastName")],
+        fields: vec![
+            IndexField::new_in_model("firstName"),
+            IndexField::new_in_model("lastName"),
+        ],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -97,10 +101,14 @@ fn the_name_argument_must_work() {
     user_model.assert_has_index(IndexDefinition {
         name: Some("MyIndexName".to_string()),
         db_name: Some("User_firstName_lastName_key".to_string()),
-        fields: vec![IndexField::new("firstName"), IndexField::new("lastName")],
+        fields: vec![
+            IndexField::new_in_model("firstName"),
+            IndexField::new_in_model("lastName"),
+        ],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -129,17 +137,30 @@ fn multiple_unique_must_work() {
                 ),
                 fields: [
                     IndexField {
-                        name: "firstName",
+                        path: [
+                            (
+                                "firstName",
+                                None,
+                            ),
+                        ],
                         sort_order: None,
                         length: None,
+                        operator_class: None,
                     },
                     IndexField {
-                        name: "lastName",
+                        path: [
+                            (
+                                "lastName",
+                                None,
+                            ),
+                        ],
                         sort_order: None,
                         length: None,
+                        operator_class: None,
                     },
                 ],
                 tpe: Unique,
+                clustered: None,
                 algorithm: None,
                 defined_on_field: false,
             },
@@ -152,17 +173,30 @@ fn multiple_unique_must_work() {
                 ),
                 fields: [
                     IndexField {
-                        name: "firstName",
+                        path: [
+                            (
+                                "firstName",
+                                None,
+                            ),
+                        ],
                         sort_order: None,
                         length: None,
+                        operator_class: None,
                     },
                     IndexField {
-                        name: "lastName",
+                        path: [
+                            (
+                                "lastName",
+                                None,
+                            ),
+                        ],
                         sort_order: None,
                         length: None,
+                        operator_class: None,
                     },
                 ],
                 tpe: Unique,
+                clustered: None,
                 algorithm: None,
                 defined_on_field: false,
             },
@@ -212,10 +246,11 @@ fn multi_field_unique_indexes_on_enum_fields_must_work() {
     user_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("User_role_key".to_string()),
-        fields: vec![IndexField::new("role")],
+        fields: vec![IndexField::new_in_model("role")],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -238,10 +273,11 @@ fn single_field_unique_indexes_on_enum_fields_must_work() {
     user_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("User_role_key".to_string()),
-        fields: vec![IndexField::new("role")],
+        fields: vec![IndexField::new_in_model("role")],
         tpe: IndexType::Unique,
         defined_on_field: true,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -258,7 +294,7 @@ fn unique_attributes_must_serialize_to_valid_dml() {
     "#;
     let schema = parse(dml);
 
-    assert!(datamodel::parse_datamodel(&render_datamodel_to_string(&schema, None)).is_ok());
+    assert_valid(&render_datamodel_to_string(&schema, None));
 }
 
 #[test]
@@ -281,10 +317,11 @@ fn named_multi_field_unique_must_work() {
     user_model.assert_has_index(IndexDefinition {
         name: Some("ClientName".to_string()),
         db_name: Some("User_a_b_key".to_string()),
-        fields: vec![IndexField::new("a"), IndexField::new("b")],
+        fields: vec![IndexField::new_in_model("a"), IndexField::new_in_model("b")],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -307,10 +344,11 @@ fn mapped_multi_field_unique_must_work() {
     user_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("dbname".to_string()),
-        fields: vec![IndexField::new("a"), IndexField::new("b")],
+        fields: vec![IndexField::new_in_model("a"), IndexField::new_in_model("b")],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -335,20 +373,22 @@ fn mapped_singular_unique_must_work() {
     model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("test".to_string()),
-        fields: vec![IndexField::new("a")],
+        fields: vec![IndexField::new_in_model("a")],
         tpe: IndexType::Unique,
         defined_on_field: true,
         algorithm: None,
+        clustered: None,
     });
 
     let model2 = datamodel.assert_has_model("Model2");
     model2.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("test2".to_string()),
-        fields: vec![IndexField::new("a")],
+        fields: vec![IndexField::new_in_model("a")],
         tpe: IndexType::Unique,
         defined_on_field: true,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -371,10 +411,11 @@ fn named_and_mapped_multi_field_unique_must_work() {
     model.assert_has_index(IndexDefinition {
         name: Some("compoundId".to_string()),
         db_name: Some("dbname".to_string()),
-        fields: vec![IndexField::new("a"), IndexField::new("b")],
+        fields: vec![IndexField::new_in_model("a"), IndexField::new_in_model("b")],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -397,19 +438,21 @@ fn implicit_names_must_work() {
     model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("Model_a_b_key".to_string()),
-        fields: vec![IndexField::new("a"), IndexField::new("b")],
+        fields: vec![IndexField::new_in_model("a"), IndexField::new_in_model("b")],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 
     model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("Model_a_key".to_string()),
-        fields: vec![IndexField::new("a")],
+        fields: vec![IndexField::new_in_model("a")],
         tpe: IndexType::Unique,
         defined_on_field: true,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -432,19 +475,21 @@ fn defined_on_field_must_work() {
     model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("Model_a_key".to_string()),
-        fields: vec![IndexField::new("a")],
+        fields: vec![IndexField::new_in_model("a")],
         tpe: IndexType::Unique,
         defined_on_field: true,
         algorithm: None,
+        clustered: None,
     });
 
     model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("Model_b_key".to_string()),
-        fields: vec![IndexField::new("b")],
+        fields: vec![IndexField::new_in_model("b")],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -465,10 +510,14 @@ fn mapping_unique_to_a_field_name_should_work() {
     model.assert_has_index(IndexDefinition {
         name: Some("usedUnique".to_string()),
         db_name: Some("used".to_string()),
-        fields: vec![IndexField::new("name"), IndexField::new("identification")],
+        fields: vec![
+            IndexField::new_in_model("name"),
+            IndexField::new_in_model("identification"),
+        ],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -495,19 +544,27 @@ fn duplicate_custom_names_on_different_model_should_work() {
     user.assert_has_index(IndexDefinition {
         name: Some("duplicateUnique".to_string()),
         db_name: Some("onUser".to_string()),
-        fields: vec![IndexField::new("name"), IndexField::new("identification")],
+        fields: vec![
+            IndexField::new_in_model("name"),
+            IndexField::new_in_model("identification"),
+        ],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 
     let post = datamodel.assert_has_model("Post");
     post.assert_has_index(IndexDefinition {
         name: Some("duplicateUnique".to_string()),
         db_name: Some("onPost".to_string()),
-        fields: vec![IndexField::new("name"), IndexField::new("identification")],
+        fields: vec![
+            IndexField::new_in_model("name"),
+            IndexField::new_in_model("identification"),
+        ],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }

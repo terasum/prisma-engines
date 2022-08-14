@@ -1,9 +1,10 @@
 #![allow(clippy::vec_init_then_push)]
+#![allow(clippy::ptr_arg)] // remove after https://github.com/rust-lang/rust-clippy/issues/8482 is fixed and shipped
 
 pub mod calculate_datamodel; // only exported to be able to unit test it
 
-mod calculate_datamodel_tests;
 mod commenting_out_guardrails;
+mod defaults;
 mod error;
 mod introspection;
 mod introspection_helpers;
@@ -35,7 +36,7 @@ pub type SqlIntrospectionResult<T> = core::result::Result<T, SqlError>;
 #[derive(Debug)]
 pub struct SqlIntrospectionConnector {
     connection: Quaint,
-    preview_features: BitFlags<PreviewFeature>,
+    _preview_features: BitFlags<PreviewFeature>,
 }
 
 impl SqlIntrospectionConnector {
@@ -61,7 +62,7 @@ impl SqlIntrospectionConnector {
 
         Ok(SqlIntrospectionConnector {
             connection,
-            preview_features,
+            _preview_features: preview_features,
         })
     }
 
@@ -71,22 +72,20 @@ impl SqlIntrospectionConnector {
         })
     }
 
-    async fn describer(&self) -> SqlIntrospectionResult<Box<dyn SqlSchemaDescriberBackend + '_>> {
-        load_describer(
-            &self.connection,
-            self.connection.connection_info(),
-            self.preview_features,
-        )
-        .await
+    async fn describer(
+        &self,
+        provider: Option<&str>,
+    ) -> SqlIntrospectionResult<Box<dyn SqlSchemaDescriberBackend + '_>> {
+        load_describer(&self.connection, self.connection.connection_info(), provider).await
     }
 
     async fn list_databases_internal(&self) -> SqlIntrospectionResult<Vec<String>> {
-        Ok(self.describer().await?.list_databases().await?)
+        Ok(self.describer(None).await?.list_databases().await?)
     }
 
     async fn get_metadata_internal(&self) -> SqlIntrospectionResult<DatabaseMetadata> {
         let sql_metadata = self
-            .describer()
+            .describer(None)
             .await?
             .get_metadata(self.connection.connection_info().schema_name())
             .await?;
@@ -105,9 +104,9 @@ impl SqlIntrospectionConnector {
     }
 
     /// Exported for tests
-    pub async fn describe(&self) -> SqlIntrospectionResult<SqlSchema> {
+    pub async fn describe(&self, provider: Option<&str>) -> SqlIntrospectionResult<SqlSchema> {
         Ok(self
-            .describer()
+            .describer(provider)
             .await?
             .describe(self.connection.connection_info().schema_name())
             .await?)
@@ -115,7 +114,7 @@ impl SqlIntrospectionConnector {
 
     async fn version(&self) -> SqlIntrospectionResult<String> {
         Ok(self
-            .describer()
+            .describer(None)
             .await?
             .version(self.connection.connection_info().schema_name())
             .await?
@@ -134,7 +133,7 @@ impl IntrospectionConnector for SqlIntrospectionConnector {
     }
 
     async fn get_database_description(&self) -> ConnectorResult<String> {
-        let sql_schema = self.catch(self.describe()).await?;
+        let sql_schema = self.catch(self.describe(None)).await?;
         tracing::debug!("SQL Schema Describer is done: {:?}", sql_schema);
         let description = serde_json::to_string_pretty(&sql_schema).unwrap();
         Ok(description)
@@ -152,34 +151,14 @@ impl IntrospectionConnector for SqlIntrospectionConnector {
         previous_data_model: &Datamodel,
         ctx: IntrospectionContext,
     ) -> ConnectorResult<IntrospectionResult> {
-        let sql_schema = self.catch(self.describe()).await?;
-        tracing::debug!("SQL Schema Describer is done: {:?}", sql_schema);
+        let sql_schema = self.catch(self.describe(Some(ctx.source.active_provider))).await?;
 
         let introspection_result = calculate_datamodel::calculate_datamodel(&sql_schema, previous_data_model, ctx)
             .map_err(|sql_introspection_error| {
                 sql_introspection_error.into_connector_error(self.connection.connection_info())
             })?;
 
-        tracing::debug!("Calculating datamodel is done: {:?}", introspection_result.data_model);
-
         Ok(introspection_result)
-    }
-}
-
-trait Dedup<T: PartialEq + Clone> {
-    fn clear_duplicates(&mut self);
-}
-
-impl<T: PartialEq + Clone> Dedup<T> for Vec<T> {
-    fn clear_duplicates(&mut self) {
-        let mut already_seen = vec![];
-        self.retain(|item| match already_seen.contains(item) {
-            true => false,
-            _ => {
-                already_seen.push(item.clone());
-                true
-            }
-        })
     }
 }
 
@@ -189,7 +168,7 @@ trait SqlFamilyTrait {
 
 impl SqlFamilyTrait for IntrospectionContext {
     fn sql_family(&self) -> SqlFamily {
-        match self.source.active_provider.as_str() {
+        match self.source.active_provider {
             "postgresql" => SqlFamily::Postgres,
             "cockroachdb" => SqlFamily::Postgres,
             "sqlite" => SqlFamily::Sqlite,
@@ -197,5 +176,11 @@ impl SqlFamilyTrait for IntrospectionContext {
             "mysql" => SqlFamily::Mysql,
             name => unreachable!("The name `{}` for the datamodel connector is not known", name),
         }
+    }
+}
+
+impl SqlFamilyTrait for calculate_datamodel::CalculateDatamodelContext<'_> {
+    fn sql_family(&self) -> SqlFamily {
+        self.sql_family
     }
 }

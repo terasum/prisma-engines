@@ -5,13 +5,11 @@ authors = ["Julius de Bruijn <julius+github@nauk.io>"]
 edition = "2021"
 
 [dependencies]
-sql-datamodel-connector = { path = "../../libs/datamodel/connectors/sql-datamodel-connector" }
 sql-introspection-connector = { path = "../connectors/sql-introspection-connector" }
 migration-connector = { path = "../../migration-engine/connectors/migration-connector" }
 sql-migration-connector = { path = "../../migration-engine/connectors/sql-migration-connector" }
 introspection-connector = { path = "../connectors/introspection-connector" }
 introspection-core = { path = "../core" }
-datamodel-connector = { path = "../../libs/datamodel/connectors/datamodel-connector" }
 sql-schema-describer = { path = "../../libs/sql-schema-describer" }
 datamodel = { path = "../../libs/datamodel/core" }
 test-macros = { path = "../../libs/test-macros" }
@@ -35,7 +33,7 @@ features = ["sqlite3", "mysql", "pg", "mssql"]
 
 [dependencies.quaint]
 git = "https://github.com/prisma/quaint"
-rev = "479e08a41b13902028906bc05f778688c06a3f18"
+rev = "fb4fe90682b4fecb485fd0d6975dd15a3bc9616b"
 features = [
     "postgresql",
     "mysql",

@@ -1,11 +1,12 @@
-use super::FieldResolutionError;
+use super::{FieldResolutionError, FieldResolvingSetup};
 use crate::{
-    ast::{self, WithName},
+    ast::{self, WithName, WithSpan},
     attributes::resolve_field_array_with_args,
     context::Context,
-    types::{FieldWithArgs, IdAttribute, ModelAttributes, SortOrder},
+    types::{FieldWithArgs, IdAttribute, IndexFieldPath, ModelAttributes, SortOrder},
     DatamodelError, StringId,
 };
+use std::borrow::Cow;
 
 /// @@id on models
 pub(super) fn model(model_data: &mut ModelAttributes, model_id: ast::ModelId, ctx: &mut Context<'_>) {
@@ -15,7 +16,9 @@ pub(super) fn model(model_data: &mut ModelAttributes, model_id: ast::ModelId, ct
         Err(err) => return ctx.push_error(err),
     };
 
-    let resolved_fields = match resolve_field_array_with_args(&fields, attr.span, model_id, ctx) {
+    let resolving = FieldResolvingSetup::OnlyTopLevel;
+
+    let resolved_fields = match resolve_field_array_with_args(&fields, attr.span, model_id, resolving, ctx) {
         Ok(fields) => fields,
         Err(FieldResolutionError::AlreadyDealtWith) => return,
         Err(FieldResolutionError::ProblematicFields {
@@ -23,18 +26,40 @@ pub(super) fn model(model_data: &mut ModelAttributes, model_id: ast::ModelId, ct
             relation_fields,
         }) => {
             if !unresolvable_fields.is_empty() {
-                ctx.push_error(DatamodelError::new_model_validation_error(
-                    &format!(
-                        "The multi field id declaration refers to the unknown fields {}.",
-                        unresolvable_fields.join(", "),
-                    ),
-                    ctx.ast[model_id].name(),
-                    fields.span(),
-                ));
+                let fields_str = unresolvable_fields
+                    .into_iter()
+                    .map(|(top_id, field_name)| match top_id {
+                        ast::TopId::CompositeType(ctid) => {
+                            let ct_name = &ctx.ast[ctid].name();
+
+                            Cow::from(format!("{field_name} in type {ct_name}"))
+                        }
+                        ast::TopId::Model(_) => Cow::from(field_name),
+                        _ => unreachable!(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let msg = format!("The multi field id declaration refers to the unknown fields {fields_str}.");
+                let error = DatamodelError::new_model_validation_error(&msg, ctx.ast[model_id].name(), fields.span());
+
+                ctx.push_error(error);
             }
 
             if !relation_fields.is_empty() {
-                ctx.push_error(DatamodelError::new_model_validation_error(&format!("The id definition refers to the relation fields {}. ID definitions must reference only scalar fields.", relation_fields.iter().map(|(f, _)| f.name()).collect::<Vec<_>>().join(", ")), ctx.ast[model_id].name(), attr.span));
+                let field_names = relation_fields
+                    .iter()
+                    .map(|(f, _)| f.name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let msg = format!("The id definition refers to the relation fields {field_names}. ID definitions must reference only scalar fields.");
+
+                ctx.push_error(DatamodelError::new_model_validation_error(
+                    &msg,
+                    ctx.ast[model_id].name(),
+                    attr.span,
+                ));
             }
 
             return;
@@ -46,9 +71,30 @@ pub(super) fn model(model_data: &mut ModelAttributes, model_id: ast::ModelId, ct
     // ID attribute fields must reference only required fields.
     let fields_that_are_not_required: Vec<&str> = resolved_fields
         .iter()
-        .map(|field| &ctx.ast[model_id][field.field_id])
-        .filter(|field| !field.arity.is_required())
-        .map(|field| field.name())
+        .filter_map(|field| {
+            let field_id = field.path.field_in_index();
+
+            match field.path.type_holding_the_indexed_field() {
+                None => {
+                    let field = &ctx.ast[model_id][field_id];
+
+                    if field.arity.is_required() {
+                        None
+                    } else {
+                        Some(field.name())
+                    }
+                }
+                Some(ctid) => {
+                    let field = &ctx.ast[ctid][field_id];
+
+                    if field.arity.is_required() {
+                        None
+                    } else {
+                        Some(field.name())
+                    }
+                }
+            }
+        })
         .collect();
 
     if !fields_that_are_not_required.is_empty() {
@@ -57,7 +103,7 @@ pub(super) fn model(model_data: &mut ModelAttributes, model_id: ast::ModelId, ct
                 "The id definition refers to the optional fields {}. ID definitions must reference only required fields.",
                 fields_that_are_not_required.join(", ")
             ),
-            &ast_model.name.name,
+            ast_model.name(),
             attr.span,
         ))
     }
@@ -66,7 +112,7 @@ pub(super) fn model(model_data: &mut ModelAttributes, model_id: ast::ModelId, ct
         ctx.push_error(DatamodelError::new_model_validation_error(
             "Each model must have at most one id criteria. You can't have `@id` and `@@id` at the same time.",
             ast_model.name(),
-            ast_model.span,
+            ast_model.span(),
         ))
     }
 
@@ -75,11 +121,13 @@ pub(super) fn model(model_data: &mut ModelAttributes, model_id: ast::ModelId, ct
         let name = super::get_name_argument(ctx);
 
         if let Some(name) = name {
-            super::validate_client_name(attr.span, &ast_model.name.name, name, "@@id", ctx);
+            super::validate_client_name(attr.span(), ast_model.name(), name, "@@id", ctx);
         }
 
         (name, mapped_name)
     };
+
+    let clustered = super::validate_clustering_setting(ctx);
 
     model_data.primary_key = Some(IdAttribute {
         name,
@@ -87,8 +135,10 @@ pub(super) fn model(model_data: &mut ModelAttributes, model_id: ast::ModelId, ct
         mapped_name,
         fields: resolved_fields,
         source_field: None,
+        clustered,
     });
 }
+
 pub(super) fn field<'db>(
     ast_model: &'db ast::Model,
     field_id: ast::FieldId,
@@ -99,7 +149,7 @@ pub(super) fn field<'db>(
         Some(_) => ctx.push_error(DatamodelError::new_model_validation_error(
             "At most one field must be marked as the id field with the `@id` attribute.",
             ast_model.name(),
-            ast_model.span,
+            ast_model.span(),
         )),
         None => {
             let mapped_name = primary_key_mapped_name(ctx);
@@ -130,16 +180,20 @@ pub(super) fn field<'db>(
                 None => None,
             };
 
+            let clustered = super::validate_clustering_setting(ctx);
+
             model_attributes.primary_key = Some(IdAttribute {
                 name: None,
                 mapped_name,
                 source_attribute: ctx.current_attribute_id(),
                 fields: vec![FieldWithArgs {
-                    field_id,
+                    path: IndexFieldPath::new(field_id),
                     sort_order,
                     length,
+                    operator_class: None,
                 }],
                 source_field: Some(field_id),
+                clustered,
             })
         }
     }
@@ -169,7 +223,7 @@ pub(super) fn validate_id_field_arities(
     if let ast::FieldArity::List | ast::FieldArity::Optional = ast_field.arity {
         ctx.push_error(DatamodelError::new_attribute_validation_error(
             "Fields that are marked as id must be required.",
-            "id",
+            "@id",
             ctx.ast[pk.source_attribute].span,
         ))
     }

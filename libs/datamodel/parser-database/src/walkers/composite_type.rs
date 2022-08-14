@@ -1,5 +1,6 @@
 use crate::{ast, types, ParserDatabase, ScalarFieldType, ScalarType};
 use diagnostics::Span;
+use schema_ast::ast::{WithDocumentation, WithName};
 
 /// A composite type, introduced with the `type` keyword in the schema.
 ///
@@ -40,7 +41,7 @@ impl<'db> CompositeTypeWalker<'db> {
 
     /// The name of the composite type in the schema.
     pub fn name(self) -> &'db str {
-        &self.db.ast[self.ctid].name.name
+        self.db.ast[self.ctid].name()
     }
 
     /// Get the field with the given ID.
@@ -73,10 +74,16 @@ impl<'db> CompositeTypeWalker<'db> {
 /// A field in a composite type.
 #[derive(Clone, Copy)]
 pub struct CompositeTypeFieldWalker<'db> {
-    ctid: ast::CompositeTypeId,
-    field_id: ast::FieldId,
-    field: &'db types::CompositeTypeField,
-    db: &'db ParserDatabase,
+    pub(super) ctid: ast::CompositeTypeId,
+    pub(super) field_id: ast::FieldId,
+    pub(super) field: &'db types::CompositeTypeField,
+    pub(super) db: &'db ParserDatabase,
+}
+
+impl<'db> PartialEq for CompositeTypeFieldWalker<'db> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ctid == other.ctid && self.field_id == other.field_id
+    }
 }
 
 impl<'db> CompositeTypeFieldWalker<'db> {
@@ -95,7 +102,7 @@ impl<'db> CompositeTypeFieldWalker<'db> {
 
     /// The optional documentation string of the field.
     pub fn documentation(&self) -> Option<&str> {
-        self.ast_field().documentation.as_ref().map(|c| c.text.as_str())
+        self.ast_field().documentation()
     }
 
     /// The name contained in the `@map()` attribute of the field, if any.
@@ -103,9 +110,14 @@ impl<'db> CompositeTypeFieldWalker<'db> {
         self.field.mapped_name.map(|id| &self.db[id])
     }
 
+    /// The ID of the field in the AST.
+    pub fn field_id(self) -> ast::FieldId {
+        self.field_id
+    }
+
     /// The name of the field.
     pub fn name(self) -> &'db str {
-        &self.ast_field().name.name
+        self.ast_field().name()
     }
 
     /// Is the field required, optional or a list?
@@ -120,14 +132,9 @@ impl<'db> CompositeTypeFieldWalker<'db> {
 
     /// The type of the field in case it is a scalar type (not an enum, not a composite type).
     pub fn scalar_type(self) -> Option<ScalarType> {
-        let mut r#type = self.r#type();
-
-        loop {
-            match r#type {
-                ScalarFieldType::BuiltInScalar(scalar) => return Some(*scalar),
-                ScalarFieldType::Alias(alias_id) => r#type = &self.db.types.type_aliases[alias_id],
-                _ => return None,
-            }
+        match self.r#type() {
+            ScalarFieldType::BuiltInScalar(scalar) => Some(*scalar),
+            _ => None,
         }
     }
 
@@ -145,11 +152,6 @@ impl<'db> CompositeTypeFieldWalker<'db> {
             .native_type
             .as_ref()
             .map(move |(datasource_name, name, args, span)| (&db[*datasource_name], &db[*name], args.as_slice(), *span))
-    }
-
-    /// Can the client use the field.
-    pub fn is_visible(self) -> bool {
-        !self.ast_field().is_commented_out
     }
 
     /// The value expression in the `@default` attribute.
@@ -176,5 +178,21 @@ impl<'db> CompositeTypeFieldWalker<'db> {
             .as_ref()
             .and_then(|d| d.mapped_name)
             .map(|id| &self.db[id])
+    }
+
+    /// Get the database name of the composite field.
+    pub fn get_field_database_name(self, field_id: ast::FieldId) -> &'db str {
+        self.db.types.composite_type_fields[&(self.ctid, field_id)]
+            .mapped_name
+            .map(|id| &self.db[id])
+            .unwrap_or_else(|| self.db.ast[self.ctid][field_id].name())
+    }
+
+    /// The final database name of the field. See crate docs for explanations on database names.
+    pub(crate) fn database_name(self) -> &'db str {
+        self.field
+            .mapped_name
+            .map(|id| &self.db[id])
+            .unwrap_or_else(|| self.name())
     }
 }

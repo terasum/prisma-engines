@@ -7,12 +7,11 @@ use datamodel::ValidatedConfiguration;
 use datamodel::{dml::Datamodel, Configuration};
 use datamodel_connector::ConnectorCapabilities;
 use prisma_models::InternalDataModelBuilder;
-use query_core::{schema::QuerySchemaRef, schema_builder, BuildMode};
+use query_core::{schema::QuerySchemaRef, schema_builder};
 use request_handlers::{dmmf, GraphQlHandler};
 use std::{env, sync::Arc};
 
 pub struct ExecuteRequest {
-    legacy: bool,
     query: String,
     datamodel: Datamodel,
     config: Configuration,
@@ -21,7 +20,6 @@ pub struct ExecuteRequest {
 
 pub struct DmmfRequest {
     datamodel: Datamodel,
-    build_mode: BuildMode,
     enable_raw_queries: bool,
     config: Configuration,
 }
@@ -31,10 +29,15 @@ pub struct GetConfigRequest {
     ignore_env_var_errors: bool,
 }
 
+pub struct DebugPanicRequest {
+    message: Option<String>,
+}
+
 pub enum CliCommand {
     Dmmf(DmmfRequest),
     GetConfig(GetConfigRequest),
     ExecuteRequest(ExecuteRequest),
+    DebugPanic(DebugPanicRequest),
 }
 
 impl CliCommand {
@@ -48,20 +51,11 @@ impl CliCommand {
 
         match subcommand {
             Subcommand::Cli(ref cliopts) => match cliopts {
-                CliOpt::Dmmf => {
-                    let build_mode = if opts.legacy {
-                        BuildMode::Legacy
-                    } else {
-                        BuildMode::Modern
-                    };
-
-                    Ok(Some(CliCommand::Dmmf(DmmfRequest {
-                        datamodel: opts.datamodel()?,
-                        build_mode,
-                        enable_raw_queries: opts.enable_raw_queries,
-                        config: opts.configuration(true)?.subject,
-                    })))
-                }
+                CliOpt::Dmmf => Ok(Some(CliCommand::Dmmf(DmmfRequest {
+                    datamodel: opts.datamodel()?,
+                    enable_raw_queries: opts.enable_raw_queries,
+                    config: opts.configuration(true)?.subject,
+                }))),
                 CliOpt::GetConfig(input) => Ok(Some(CliCommand::GetConfig(GetConfigRequest {
                     config: opts.configuration(input.ignore_env_var_errors)?,
                     ignore_env_var_errors: input.ignore_env_var_errors,
@@ -69,9 +63,11 @@ impl CliCommand {
                 CliOpt::ExecuteRequest(input) => Ok(Some(CliCommand::ExecuteRequest(ExecuteRequest {
                     query: input.query.clone(),
                     enable_raw_queries: opts.enable_raw_queries,
-                    legacy: input.legacy,
                     datamodel: opts.datamodel()?,
                     config: opts.configuration(false)?.subject,
+                }))),
+                CliOpt::DebugPanic(input) => Ok(Some(CliCommand::DebugPanic(DebugPanicRequest {
+                    message: input.message.clone(),
                 }))),
             },
         }
@@ -82,6 +78,13 @@ impl CliCommand {
             CliCommand::Dmmf(request) => Self::dmmf(request).await,
             CliCommand::GetConfig(input) => Self::get_config(input),
             CliCommand::ExecuteRequest(request) => Self::execute_request(request).await,
+            CliCommand::DebugPanic(request) => {
+                if let Some(message) = request.message {
+                    panic!("{}", message);
+                } else {
+                    panic!("query-engine debug panic");
+                }
+            }
         }
     }
 
@@ -96,7 +99,6 @@ impl CliCommand {
         let internal_data_model = InternalDataModelBuilder::from(&request.datamodel).build("".into());
         let query_schema: QuerySchemaRef = Arc::new(schema_builder::build(
             internal_data_model,
-            request.build_mode,
             request.enable_raw_queries,
             capabilities,
             request.config.preview_features().iter().collect(),
@@ -120,7 +122,7 @@ impl CliCommand {
                 .resolve_datasource_urls_from_env(&[], |key| env::var(key).ok())?;
         }
 
-        let json = datamodel::json::mcf::config_to_mcf_json_value(config);
+        let json = datamodel::mcf::config_to_mcf_json_value(config);
         let serialized = serde_json::to_string(&json)?;
 
         println!("{}", serialized);
@@ -135,7 +137,6 @@ impl CliCommand {
         request.config.validate_that_one_datasource_is_provided()?;
 
         let cx = PrismaContext::builder(request.config, request.datamodel)
-            .legacy(request.legacy)
             .enable_raw_queries(request.enable_raw_queries)
             .build()
             .await?;

@@ -3,15 +3,15 @@ use crate::{
     diagnostics::{DatamodelError, Diagnostics, Span},
 };
 use datamodel_connector::{Connector, ConnectorCapabilities, ReferentialIntegrity};
-use std::path::Path;
+use std::{borrow::Cow, path::Path};
 
 /// a `datasource` from the prisma schema.
 pub struct Datasource {
     pub name: String,
     /// The provider string
     pub provider: String,
-    /// the provider that was selected as active from all specified providers
-    pub active_provider: String,
+    /// The provider that was selected as active from all specified providers
+    pub active_provider: &'static str,
     pub url: StringFromEnvVar,
     pub url_span: Span,
     pub documentation: Option<String>,
@@ -41,6 +41,7 @@ impl std::fmt::Debug for Datasource {
 impl Datasource {
     pub fn capabilities(&self) -> ConnectorCapabilities {
         let capabilities = self.active_connector.capabilities().to_owned();
+
         ConnectorCapabilities::new(capabilities)
     }
 
@@ -89,6 +90,20 @@ impl Datasource {
         };
 
         self.active_connector.validate_url(&url).map_err(|err_str| {
+            let err_str = if url.starts_with("prisma") {
+                let s = indoc::formatdoc! {"
+                    {err_str}
+
+                    To use a URL with protocol `prisma://` the Data Proxy must be enabled via `prisma generate --data-proxy`.
+
+                    More information about Data Proxy: https://pris.ly/d/data-proxy
+                "};
+
+                Cow::from(s)
+            } else {
+                Cow::from(err_str)
+            };
+
             DatamodelError::new_source_validation_error(&format!("the URL {}", &err_str), &self.name, self.url_span)
         })?;
 

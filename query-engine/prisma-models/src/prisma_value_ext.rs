@@ -17,12 +17,14 @@ impl PrismaValueExtensions for PrismaValue {
             (val @ PrismaValue::String(_), TypeIdentifier::String) => val,
             (val @ PrismaValue::Int(_), TypeIdentifier::Int) => val,
             (val @ PrismaValue::Float(_), TypeIdentifier::Float) => val,
+            (val @ PrismaValue::Float(_), TypeIdentifier::Decimal) => val,
             (val @ PrismaValue::Boolean(_), TypeIdentifier::Boolean) => val,
             (val @ PrismaValue::DateTime(_), TypeIdentifier::DateTime) => val,
             (val @ PrismaValue::Enum(_), TypeIdentifier::Enum(_)) => val,
             (val @ PrismaValue::Uuid(_), TypeIdentifier::UUID) => val,
             (val @ PrismaValue::BigInt(_), TypeIdentifier::BigInt) => val,
             (val @ PrismaValue::Bytes(_), TypeIdentifier::Bytes) => val,
+            (val @ PrismaValue::Json(_), TypeIdentifier::Json) => val,
 
             // Valid String coercions
             (PrismaValue::Int(i), TypeIdentifier::String) => PrismaValue::String(format!("{}", i)),

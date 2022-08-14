@@ -197,8 +197,8 @@ fn allow_complicated_self_relations() {
     let dml = indoc! {r#"
         model User {
           id     Int  @id
-          sonId  Int?
-          wifeId Int?
+          sonId  Int? @unique
+          wifeId Int? @unique
 
           son     User? @relation(name: "offspring", fields: sonId, references: id)
           father  User? @relation(name: "offspring")
@@ -355,7 +355,7 @@ fn implicit_unique_constraint_on_one_to_one() {
 
         model Post {
           post_id Int    @id @map("post_id_map")
-          user_id Int    @map("user_id_map_on_post")
+          user_id Int    @unique @map("user_id_map_on_post")
           user    User   @relation(fields: user_id, references: user_id)
 
           @@map("PostMap")
@@ -378,10 +378,11 @@ fn implicit_unique_constraint_on_one_to_one() {
     schema.assert_has_model("Post").assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("PostMap_user_id_map_on_post_key".to_string()),
-        fields: vec![IndexField::new("user_id")],
+        fields: vec![IndexField::new_in_model("user_id")],
         tpe: IndexType::Unique,
         defined_on_field: true,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -401,6 +402,8 @@ fn implicit_unique_constraint_on_compound_one_to_one() {
             user_id_1  Int
             user_id_2  Int
             user       User @relation(fields: [user_id_1, user_id_2], references: [user_id_1, user_id_2])
+
+            @@unique([user_id_1, user_id_2])
         }
     "#};
 
@@ -420,10 +423,14 @@ fn implicit_unique_constraint_on_compound_one_to_one() {
     schema.assert_has_model("Post").assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("Post_user_id_1_user_id_2_key".to_string()),
-        fields: vec![IndexField::new("user_id_1"), IndexField::new("user_id_2")],
+        fields: vec![
+            IndexField::new_in_model("user_id_1"),
+            IndexField::new_in_model("user_id_2"),
+        ],
         tpe: IndexType::Unique,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -467,9 +474,9 @@ fn one_to_one_optional() {
         }
 
         model B {
-          id   Int @id
-          a_id Int?
-          a    A? @relation(fields: [a_id], references: [id])
+          id   Int  @id
+          a_id Int? @unique
+          a    A?   @relation(fields: [a_id], references: [id])
         }
     "#};
 
@@ -494,7 +501,7 @@ fn embedded_many_to_many_relations_work_on_mongodb() {
         }
     "#};
 
-    let schema = parse(&with_header(dml, Provider::Mongo, &["mongoDb"]));
+    let schema = parse(&with_header(dml, Provider::Mongo, &[]));
 
     schema
         .assert_has_model("A")

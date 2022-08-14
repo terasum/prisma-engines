@@ -1,14 +1,40 @@
 use crate::ast::{Comment, Field, FieldId, Identifier, SchemaAst, Span};
 
-/// A composite type declaration.
+use super::{WithDocumentation, WithIdentifier};
+
+/// A type declaration in the data model. Defined by a type keyword and a block
+/// of fields that can be embedded in a model.
+///
+/// A composite type has no definition in the database schema, and is completely
+/// a Prisma concept. It gives type-safety to dynamic data such as JSON.
 #[derive(Debug, Clone)]
 pub struct CompositeType {
     /// The name of the type.
-    pub name: Identifier,
+    ///
+    /// ```ignore
+    /// type Foo { .. }
+    ///      ^^^
+    /// ```
+    pub(crate) name: Identifier,
     /// The fields of the type.
-    pub fields: Vec<Field>,
+    ///
+    /// ```ignore
+    /// type Foo {
+    ///   bar String
+    ///   ^^^^^^^^^^
+    /// }
+    /// ```
+    pub(crate) fields: Vec<Field>,
     /// The documentation for this type.
-    pub documentation: Option<Comment>,
+    ///
+    /// ```ignore
+    /// /// Lorem ipsum
+    ///     ^^^^^^^^^^^
+    /// type Foo {
+    ///   bar String
+    /// }
+    /// ```
+    pub(crate) documentation: Option<Comment>,
     /// The location of this type in the text representation.
     pub span: Span,
 }
@@ -44,5 +70,17 @@ impl std::ops::Index<FieldId> for CompositeType {
 
     fn index(&self, index: FieldId) -> &Self::Output {
         &self.fields[index.0 as usize]
+    }
+}
+
+impl WithDocumentation for CompositeType {
+    fn documentation(&self) -> Option<&str> {
+        self.documentation.as_ref().map(|doc| doc.text.as_str())
+    }
+}
+
+impl WithIdentifier for CompositeType {
+    fn identifier(&self) -> &Identifier {
+        &self.name
     }
 }

@@ -5,7 +5,7 @@ use crate::{
 };
 use datamodel_connector::ConnectorCapabilities;
 use prisma_models::InternalDataModelBuilder;
-use query_core::{schema_builder, BuildMode, QuerySchema};
+use query_core::{schema::QuerySchema, schema_builder};
 use serial_test::serial;
 use std::sync::Arc;
 
@@ -22,7 +22,6 @@ pub fn get_query_schema(datamodel_string: &str) -> (QuerySchema, datamodel::dml:
     let internal_ref = InternalDataModelBuilder::from(&dm).build("db".to_owned());
     let schema = schema_builder::build(
         internal_ref,
-        BuildMode::Modern,
         false,
         capabilities,
         config.subject.preview_features().iter().collect(),
@@ -104,14 +103,14 @@ fn test_dmmf_cli_command(schema: &str) -> PrismaResult<()> {
         enable_debug_mode: false,
         enable_raw_queries: false,
         enable_playground: false,
-        legacy: false,
+        enable_metrics: true,
         log_format: None,
         log_queries: true,
         overwrite_datasources: None,
         port: 123,
         unix_path: None,
         subcommand: Some(Subcommand::Cli(CliOpt::Dmmf)),
-        open_telemetry: false,
+        enable_open_telemetry: false,
         open_telemetry_endpoint: String::new(),
     };
 

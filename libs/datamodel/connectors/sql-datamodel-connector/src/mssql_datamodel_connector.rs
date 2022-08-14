@@ -1,11 +1,14 @@
+mod validations;
+
+use connection_string::JdbcString;
 use datamodel_connector::{
     helper::{arg_vec_from_opt, args_vec_from_opt, parse_one_opt_u32, parse_two_opt_u32},
-    parser_database::{self, ScalarType},
-    walker_ext_traits::*,
+    parser_database::{self, ast, ParserDatabase, ScalarType},
     Connector, ConnectorCapability, ConstraintScope, DatamodelError, Diagnostics, NativeTypeConstructor,
     NativeTypeInstance, ReferentialAction, ReferentialIntegrity, Span,
 };
 use enumflags2::BitFlags;
+use lsp_types::{CompletionItem, CompletionItemKind, CompletionList};
 use native_types::{MsSqlType, MsSqlTypeParameter, NativeType};
 use once_cell::sync::Lazy;
 use std::borrow::Cow;
@@ -94,6 +97,14 @@ const CAPABILITIES: &[ConnectorCapability] = &[
     ConnectorCapability::UpdateableId,
     ConnectorCapability::PrimaryKeySortOrderDefinition,
     ConnectorCapability::ImplicitManyToManyRelation,
+    ConnectorCapability::DecimalType,
+    ConnectorCapability::ClusteringSetting,
+    ConnectorCapability::OrderByNullsFirstLast,
+    ConnectorCapability::SupportsTxIsolationReadUncommitted,
+    ConnectorCapability::SupportsTxIsolationReadCommitted,
+    ConnectorCapability::SupportsTxIsolationRepeatableRead,
+    ConnectorCapability::SupportsTxIsolationSerializable,
+    ConnectorCapability::SupportsTxIsolationSnapshot,
 ];
 
 pub struct MsSqlDatamodelConnector;
@@ -141,6 +152,10 @@ const SCALAR_TYPE_DEFAULTS: &[(ScalarType, MsSqlType)] = &[
 ];
 
 impl Connector for MsSqlDatamodelConnector {
+    fn provider_name(&self) -> &'static str {
+        "sqlserver"
+    }
+
     fn name(&self) -> &str {
         "SQL Server"
     }
@@ -221,8 +236,33 @@ impl Connector for MsSqlDatamodelConnector {
             .any(|(st, nt)| scalar_type == st && &native_type == nt)
     }
 
-    fn set_config_dir<'a>(&self, _config_dir: &std::path::Path, url: &'a str) -> Cow<'a, str> {
-        Cow::Borrowed(url)
+    fn set_config_dir<'a>(&self, config_dir: &std::path::Path, url: &'a str) -> Cow<'a, str> {
+        let mut jdbc: JdbcString = match format!("jdbc:{url}").parse() {
+            Ok(jdbc) => jdbc,
+            _ => return Cow::from(url),
+        };
+
+        let set_root = |path: String| {
+            let path = std::path::Path::new(&path);
+
+            if path.is_relative() {
+                Some(config_dir.join(&path).to_str().map(ToString::to_string).unwrap())
+            } else {
+                Some(path.to_str().unwrap().to_string())
+            }
+        };
+
+        let props = jdbc.properties_mut();
+
+        let cert_path = props.remove("trustservercertificateca").and_then(set_root);
+
+        if let Some(path) = cert_path {
+            props.insert("trustServerCertificateCA".to_owned(), path);
+        }
+
+        let final_connection_string = format!("{jdbc}").replace("jdbc:sqlserver://", "sqlserver://");
+
+        Cow::Owned(final_connection_string)
     }
 
     fn validate_native_type_arguments(
@@ -269,48 +309,12 @@ impl Connector for MsSqlDatamodelConnector {
     }
 
     fn validate_model(&self, model: parser_database::walkers::ModelWalker<'_>, errors: &mut Diagnostics) {
-        let span = model.ast_model().span;
-
         for index in model.indexes() {
-            for field in index.fields() {
-                if let Some(native_type) = field.native_type_instance(self) {
-                    let r#type: MsSqlType = serde_json::from_value(native_type.serialized_native_type.clone()).unwrap();
-                    let error = self.native_instance_error(&native_type);
-
-                    if heap_allocated_types().contains(&r#type) {
-                        if index.is_unique() {
-                            errors.push_error(error.new_incompatible_native_type_with_unique("", span))
-                        } else {
-                            errors.push_error(error.new_incompatible_native_type_with_index("", span))
-                        };
-                        break;
-                    }
-                }
-            }
+            validations::index_uses_correct_field_types(self, index, errors);
         }
 
         if let Some(pk) = model.primary_key() {
-            for id_field in pk.fields() {
-                if let Some(native_type) = id_field.native_type_instance(self) {
-                    let r#type: MsSqlType = serde_json::from_value(native_type.serialized_native_type.clone()).unwrap();
-
-                    if heap_allocated_types().contains(&r#type) {
-                        errors.push_error(
-                            self.native_instance_error(&native_type)
-                                .new_incompatible_native_type_with_id("", span),
-                        );
-                        break;
-                    }
-                }
-
-                if let Some(ScalarType::Bytes) = id_field.scalar_type() {
-                    errors.push_error(DatamodelError::new_invalid_model_error(
-                        "Using Bytes type is not allowed in the model's id.",
-                        span,
-                    ));
-                    break;
-                }
-            }
+            validations::primary_key_uses_correct_field_types(self, pk, errors);
         }
     }
 
@@ -410,6 +414,25 @@ impl Connector for MsSqlDatamodelConnector {
         }
 
         Ok(())
+    }
+
+    fn push_completions(
+        &self,
+        _db: &ParserDatabase,
+        position: ast::SchemaPosition<'_>,
+        completions: &mut CompletionList,
+    ) {
+        if let ast::SchemaPosition::Model(
+            _model_id,
+            ast::ModelPosition::Field(_, ast::FieldPosition::Attribute("default", _, None)),
+        ) = position
+        {
+            completions.items.push(CompletionItem {
+                label: "map: ".to_owned(),
+                kind: Some(CompletionItemKind::PROPERTY),
+                ..Default::default()
+            });
+        }
     }
 }
 

@@ -8,7 +8,6 @@ datamodel = { path = "../../libs/datamodel/core" }
 mongodb-client = { path = "../../libs/mongodb-client" }
 migration-core = { path = "../core" }
 
-async-trait = "0.1.52"
 connection-string = "*"
 enumflags2 = "*"
 mongodb = "2.1.0"
@@ -17,7 +16,7 @@ url = "2"
 
 [dependencies.quaint]
 git = "https://github.com/prisma/quaint"
-rev = "479e08a41b13902028906bc05f778688c06a3f18"
+rev = "fb4fe90682b4fecb485fd0d6975dd15a3bc9616b"
 features = [
     "sqlite",
     "postgresql",

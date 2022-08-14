@@ -20,21 +20,29 @@ pub use self::{
     capabilities::{ConnectorCapabilities, ConnectorCapability},
     native_type_instance::NativeTypeInstance,
 };
-pub use diagnostics::{ConnectorErrorFactory, DatamodelError, Diagnostics, Span};
+pub use diagnostics::{DatamodelError, Diagnostics, NativeTypeErrorFactory, Span};
 pub use empty_connector::EmptyDatamodelConnector;
 pub use native_type_constructor::NativeTypeConstructor;
 pub use parser_database::{self, ReferentialAction, ScalarType};
 pub use referential_integrity::ReferentialIntegrity;
 
 use enumflags2::BitFlags;
+use lsp_types::CompletionList;
+use parser_database::{ast::SchemaPosition, IndexAlgorithm, ParserDatabase};
 use std::{borrow::Cow, collections::BTreeMap};
 
 /// The datamodel connector API.
 pub trait Connector: Send + Sync {
+    /// The name of the provider, for string comparisons determining which connector we are on.
+    fn provider_name(&self) -> &'static str;
+
+    /// Must return true whenever the passed in provider name is a match.
+    fn is_provider(&self, name: &str) -> bool {
+        name == self.provider_name()
+    }
+
     /// The name of the connector. Can be used in error messages.
     fn name(&self) -> &str;
-
-    // Capabilities
 
     /// The static list of capabilities for the connector.
     fn capabilities(&self) -> &'static [ConnectorCapability];
@@ -96,7 +104,18 @@ pub trait Connector: Send + Sync {
     ) {
     }
 
-    fn validate_model(&self, _model: parser_database::walkers::ModelWalker<'_>, _: &mut diagnostics::Diagnostics) {}
+    fn validate_model(&self, _model: parser_database::walkers::ModelWalker<'_>, _: &mut Diagnostics) {}
+
+    fn validate_scalar_field_unknown_default_functions(
+        &self,
+        db: &parser_database::ParserDatabase,
+        diagnostics: &mut Diagnostics,
+    ) {
+        for d in db.walk_scalar_field_defaults_with_unknown_function() {
+            let (func_name, _, span) = d.value().as_function().unwrap();
+            diagnostics.push_error(DatamodelError::new_default_unknown_function(func_name, span));
+        }
+    }
 
     /// The scopes in which a constraint name should be validated. If empty, doesn't check for name
     /// clashes in the validation phase.
@@ -183,10 +202,6 @@ pub trait Connector: Send + Sync {
         self.has_capability(ConnectorCapability::ScalarLists)
     }
 
-    fn supports_relations_over_non_unique_criteria(&self) -> bool {
-        self.has_capability(ConnectorCapability::RelationsOverNonUniqueCriteria)
-    }
-
     fn supports_enums(&self) -> bool {
         self.has_capability(ConnectorCapability::Enums)
     }
@@ -219,15 +234,30 @@ pub trait Connector: Send + Sync {
         self.has_capability(ConnectorCapability::CompoundIds)
     }
 
+    fn supports_decimal(&self) -> bool {
+        self.has_capability(ConnectorCapability::DecimalType)
+    }
+
+    fn supported_index_types(&self) -> BitFlags<IndexAlgorithm> {
+        IndexAlgorithm::BTree.into()
+    }
+
+    fn supports_index_type(&self, algo: IndexAlgorithm) -> bool {
+        self.supported_index_types().contains(algo)
+    }
+
     fn allows_relation_fields_in_arbitrary_order(&self) -> bool {
         self.has_capability(ConnectorCapability::RelationFieldsInArbitraryOrder)
     }
 
-    fn native_instance_error(&self, instance: &NativeTypeInstance) -> ConnectorErrorFactory {
-        ConnectorErrorFactory::new(instance.to_string(), self.name().to_owned())
+    fn native_instance_error(&self, instance: &NativeTypeInstance) -> NativeTypeErrorFactory {
+        NativeTypeErrorFactory::new(instance.to_string(), self.name().to_owned())
     }
 
     fn validate_url(&self, url: &str) -> Result<(), String>;
+
+    fn push_completions(&self, _db: &ParserDatabase, _position: SchemaPosition<'_>, _completions: &mut CompletionList) {
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]

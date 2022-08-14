@@ -9,7 +9,6 @@ use crate::{
     RelationLinkManifestation, RelationSide, RelationTable, TypeIdentifier,
 };
 use datamodel::dml::{self, CompositeTypeFieldType, Datamodel, Ignorable, WithDatabaseName};
-use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use std::sync::Arc;
 
@@ -84,7 +83,7 @@ impl From<&dml::Datamodel> for InternalDataModelBuilder {
 fn model_builders(datamodel: &Datamodel, relation_placeholders: &[RelationPlaceholder]) -> Vec<ModelBuilder> {
     datamodel
         .models()
-        .filter(|model| !model.is_ignored)
+        .filter(|model| !model.is_ignored())
         .filter(|model| model.is_supported())
         .map(|model| ModelBuilder {
             name: model.name.clone(),
@@ -177,7 +176,7 @@ fn composite_field_builders(datamodel: &Datamodel, composite: &dml::CompositeTyp
                 // No defaults on composite fields of type composite
                 default_value: None,
             })),
-            CompositeTypeFieldType::Scalar(_, _, _) | CompositeTypeFieldType::Enum(_) => {
+            CompositeTypeFieldType::Scalar(_, _) | CompositeTypeFieldType::Enum(_) => {
                 let type_ident = field.type_identifier();
 
                 if type_ident == TypeIdentifier::Unsupported {
@@ -222,9 +221,15 @@ fn index_builders(model: &dml::Model) -> Vec<IndexBuilder> {
         .indices
         .iter()
         .filter(|i| i.fields.len() > 1 && model.is_compound_index_supported(i)) // @@unique for 1 field are transformed to is_unique instead
+        .filter(|i| i.fields.iter().all(|f| f.path.len() <= 1)) // TODO: we do not take indices with composite fields for now
         .map(|i| IndexBuilder {
             name: i.name.clone(),
-            fields: i.fields.clone().into_iter().map(|f| f.name).collect(),
+            fields: i
+                .fields
+                .clone()
+                .into_iter()
+                .map(|mut f| f.path.pop().unwrap().0)
+                .collect(),
             typ: match i.tpe {
                 dml::IndexType::Unique => IndexType::Unique,
                 dml::IndexType::Normal => IndexType::Normal,
@@ -275,6 +280,7 @@ fn convert_enum_values(enm: &dml::Enum) -> Vec<InternalEnumValue> {
 /// Calculates placeholders that are used to compute builders dependent on some relation information being present already.
 fn relation_placeholders(datamodel: &dml::Datamodel) -> Vec<RelationPlaceholder> {
     let mut result = Vec::new();
+
     for model in datamodel.models().filter(|model| !model.is_ignored) {
         for field in model.relation_fields().filter(|field| !field.is_ignored) {
             let dml::RelationInfo {
@@ -367,21 +373,26 @@ fn relation_placeholders(datamodel: &dml::Datamodel) -> Vec<RelationPlaceholder>
                 },
             };
 
-            result.push(RelationPlaceholder {
+            let placeholder = RelationPlaceholder {
                 name: name.clone(),
                 model_a,
                 model_b,
                 field_a,
                 field_b,
                 manifestation,
-            })
+            };
+
+            // Skip duplicate placeholders
+            if !result.contains(&placeholder) {
+                result.push(placeholder);
+            }
         }
     }
 
-    result.into_iter().unique_by(|rel| rel.name()).collect()
+    result
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RelationPlaceholder {
     pub name: String,
     pub model_a: dml::Model,

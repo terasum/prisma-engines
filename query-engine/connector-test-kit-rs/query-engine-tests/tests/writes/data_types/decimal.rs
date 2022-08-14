@@ -1,7 +1,7 @@
 use query_engine_tests::*;
 
 // Ignored for MSSQL and SQLite because of low precision issues.
-#[test_suite(schema(schema))]
+#[test_suite(schema(schema), capabilities(DecimalType))]
 mod decimal {
     use indoc::indoc;
     use query_engine_tests::run_query;
@@ -61,6 +61,26 @@ mod decimal {
             }
           }"#),
           @r###"{"data":{"updateOneModel":{"field":null}}}"###
+        );
+
+        Ok(())
+    }
+
+    fn deicmal_id() -> String {
+        let schema = indoc! {
+            r#"model Model {
+              #id(id, Decimal, @id)
+             }"#
+        };
+
+        schema.to_owned()
+    }
+
+    #[connector_test(schema(deicmal_id), capabilities(DecimalType))]
+    async fn using_decimal_as_id(runner: Runner) -> TestResult<()> {
+        insta::assert_snapshot!(
+          run_query!(&runner, r#"mutation { createOneModel( data: { id: "1000000000" } ) { id } }"#),
+          @r###"{"data":{"createOneModel":{"id":"1000000000"}}}"###
         );
 
         Ok(())

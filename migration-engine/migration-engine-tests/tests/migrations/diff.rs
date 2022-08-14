@@ -366,11 +366,6 @@ fn diffing_mongo_schemas_to_script_returns_a_nice_error() {
             url = "mongo+srv://test"
         }
 
-        generator js {
-            provider = "prisma-client-js"
-            previewFeatures = ["mongodb"]
-        }
-
         model TestModel {
             id String @id @default(auto()) @map("_id") @db.ObjectId
             names String
@@ -384,12 +379,6 @@ fn diffing_mongo_schemas_to_script_returns_a_nice_error() {
             provider = "mongodb"
             url = "mongo+srv://test"
         }
-
-        generator js {
-            provider = "prisma-client-js"
-            previewFeatures = ["mongodb"]
-        }
-
 
         model TestModel {
             id String @id @default(auto()) @map("_id") @db.ObjectId
@@ -424,6 +413,34 @@ fn diffing_mongo_schemas_to_script_returns_a_nice_error() {
 }
 
 #[test]
+fn diff_sqlite_migration_directories() {
+    let base_dir = tempfile::tempdir().unwrap();
+    let base_dir_2 = tempfile::tempdir().unwrap();
+    let base_dir_str = base_dir.path().to_str().unwrap();
+    let base_dir_str_2 = base_dir_2.path().to_str().unwrap();
+
+    let migrations_lock_path = base_dir.path().join("migration_lock.toml");
+    std::fs::write(&migrations_lock_path, &"provider = \"sqlite\"").unwrap();
+    let migrations_lock_path = base_dir_2.path().join("migration_lock.toml");
+    std::fs::write(&migrations_lock_path, &"provider = \"sqlite\"").unwrap();
+
+    let params = DiffParams {
+        exit_code: None,
+        from: DiffTarget::Migrations(PathContainer {
+            path: base_dir_str.to_owned(),
+        }),
+        script: true,
+        shadow_database_url: None,
+        to: DiffTarget::Migrations(PathContainer {
+            path: base_dir_str_2.to_owned(),
+        }),
+    };
+
+    tok(migration_core::migration_api(None, None).unwrap().diff(params)).unwrap();
+    // it's ok!
+}
+
+#[test]
 fn diffing_mongo_schemas_works() {
     let tempdir = tempfile::tempdir().unwrap();
 
@@ -431,11 +448,6 @@ fn diffing_mongo_schemas_works() {
         datasource db {
             provider = "mongodb"
             url = "mongo+srv://test"
-        }
-
-        generator js {
-            provider = "prisma-client-js"
-            previewFeatures = ["mongodb"]
         }
 
         model TestModel {
@@ -451,12 +463,6 @@ fn diffing_mongo_schemas_works() {
             provider = "mongodb"
             url = "mongo+srv://test"
         }
-
-        generator js {
-            provider = "prisma-client-js"
-            previewFeatures = ["mongodb"]
-        }
-
 
         model TestModel {
             id String @id @default(auto()) @map("_id") @db.ObjectId
@@ -654,15 +660,72 @@ fn diff_with_exit_code_and_non_empty_diff_returns_two() {
     expected_diff.assert_eq(&diff);
 }
 
+#[test]
+fn diff_with_non_existing_sqlite_database_from_url() {
+    let expected = expect![[r#"
+        Database db.sqlite does not exist at <the-tmpdir-path>/db.sqlite
+    "#]];
+    let tmpdir = tempfile::tempdir().unwrap();
+
+    let error = diff_error(DiffParams {
+        exit_code: Some(true),
+        from: DiffTarget::Empty,
+        script: false,
+        shadow_database_url: None,
+        to: DiffTarget::Url(UrlContainer {
+            url: format!("file:{}", tmpdir.path().join("db.sqlite").to_string_lossy()),
+        }),
+    });
+
+    let error = error
+        .replace(tmpdir.path().to_str().unwrap(), "<the-tmpdir-path>")
+        .replace(std::path::MAIN_SEPARATOR, "/"); // normalize windows paths
+
+    expected.assert_eq(&error);
+}
+
+#[test]
+fn diff_with_non_existing_sqlite_database_from_datasource() {
+    let expected = expect![[r#"
+        Database assume.sqlite does not exist at /this/file/doesnt/exist/we/assume.sqlite
+    "#]];
+
+    let schema = r#"
+        datasource db {
+            provider = "sqlite"
+            url = "file:/this/file/doesnt/exist/we/assume.sqlite"
+        }
+    "#;
+    let tmpdir = tempfile::tempdir().unwrap();
+
+    let schema_path = write_file_to_tmp(schema, &tmpdir, "schema.prisma");
+
+    let error = diff_error(DiffParams {
+        exit_code: Some(true),
+        from: DiffTarget::Empty,
+        script: false,
+        shadow_database_url: None,
+        to: DiffTarget::SchemaDatasource(SchemaContainer {
+            schema: schema_path.to_string_lossy().into_owned(),
+        }),
+    });
+
+    if cfg!(target_os = "windows") {
+        return; // path in error looks different
+    }
+
+    expected.assert_eq(&error);
+}
+
 // Call diff, and expect it to error. Return the error.
-fn diff_error(params: DiffParams) -> String {
+pub(crate) fn diff_error(params: DiffParams) -> String {
     let api = migration_core::migration_api(None, None).unwrap();
     let result = test_setup::runtime::run_with_tokio(api.diff(params));
     result.unwrap_err().to_string()
 }
 
 // Call diff, and expect it to succeed. Return the result and what would be printed to stdout.
-fn diff_result(params: DiffParams) -> (DiffResult, String) {
+pub(crate) fn diff_result(params: DiffParams) -> (DiffResult, String) {
     let host = Arc::new(TestConnectorHost::default());
     let api = migration_core::migration_api(None, Some(host.clone())).unwrap();
     let result = test_setup::runtime::run_with_tokio(api.diff(params)).unwrap();
@@ -676,7 +739,7 @@ fn diff_output(params: DiffParams) -> String {
     diff_result(params).1
 }
 
-fn write_file_to_tmp(contents: &str, tempdir: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
+pub(crate) fn write_file_to_tmp(contents: &str, tempdir: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
     let tempfile_path = tempdir.path().join(name);
     std::fs::write(&tempfile_path, contents.as_bytes()).unwrap();
     tempfile_path

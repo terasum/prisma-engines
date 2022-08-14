@@ -92,13 +92,13 @@ fn unique_index_names_support() {
     let error = datamodel::parse_schema(dml).map(drop).unwrap_err();
 
     let expectation = expect![[r#"
-        [1;91merror[0m: [1mError parsing attribute "@index": The given constraint name `metaId` has to be unique in the following namespace: global for indexes and unique constraints. Please provide a different name using the `map` argument.[0m
+        [1;91merror[0m: [1mError parsing attribute "@@index": The given constraint name `metaId` has to be unique in the following namespace: global for indexes and unique constraints. Please provide a different name using the `map` argument.[0m
           [1;94m-->[0m  [4mschema.prisma:10[0m
         [1;94m   | [0m
         [1;94m 9 | [0m
         [1;94m10 | [0m  @@index([id], [1;91mname: "metaId"[0m)
         [1;94m   | [0m
-        [1;91merror[0m: [1mError parsing attribute "@index": The given constraint name `metaId` has to be unique in the following namespace: global for indexes and unique constraints. Please provide a different name using the `map` argument.[0m
+        [1;91merror[0m: [1mError parsing attribute "@@index": The given constraint name `metaId` has to be unique in the following namespace: global for indexes and unique constraints. Please provide a different name using the `map` argument.[0m
           [1;94m-->[0m  [4mschema.prisma:17[0m
         [1;94m   | [0m
         [1;94m16 | [0m
@@ -162,7 +162,7 @@ fn non_unique_relation_criteria_support() {
     let error = datamodel::parse_schema(dml).map(drop).unwrap_err();
 
     let expectation = expect![[r#"
-        [1;91merror[0m: [1mError validating: The argument `references` must refer to a unique criteria in the related model `User`. But it is referencing the following fields that are not a unique criteria: name[0m
+        [1;91merror[0m: [1mError parsing attribute "@relation": The argument `references` must refer to a unique criteria in the related model. Consider adding an `@unique` attribute to the field `name` in the model `User`.[0m
           [1;94m-->[0m  [4mschema.prisma:9[0m
         [1;94m   | [0m
         [1;94m 8 | [0m  assigneeName String

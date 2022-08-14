@@ -19,7 +19,7 @@ pub(crate) fn run(schema: &str) -> String {
                 .map(|err: &DatamodelError| MiniError {
                     start: err.span().start,
                     end: err.span().end,
-                    text: format!("{}", err),
+                    text: err.message().to_string(),
                     is_warning: false,
                 })
                 .collect();
@@ -30,7 +30,7 @@ pub(crate) fn run(schema: &str) -> String {
                 .map(|warn: &DatamodelWarning| MiniError {
                     start: warn.span().start,
                     end: warn.span().end,
-                    text: format!("{}", warn),
+                    text: warn.message().to_owned(),
                     is_warning: true,
                 })
                 .collect();
@@ -46,7 +46,7 @@ pub(crate) fn run(schema: &str) -> String {
                 .map(|warn: DatamodelWarning| MiniError {
                     start: warn.span().start,
                     end: warn.span().end,
-                    text: format!("{}", warn),
+                    text: warn.message().to_owned(),
                     is_warning: true,
                 })
                 .collect();
@@ -70,39 +70,6 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&result).unwrap();
 
         serde_json::to_string_pretty(&value).unwrap()
-    }
-
-    #[test]
-    fn type_aliases_should_give_a_warning() {
-        let dml = indoc! {r#"
-            datasource db {
-              provider = "postgresql"
-              url      = env("DATABASE_URL")
-            }
-
-            generator client {
-              provider = "prisma-client-js"
-            }
-
-            type MyString = String @default("A")
-
-            model Code {
-              id  String   @id
-              val MyString
-            }
-        "#};
-
-        let expected = expect![[r#"
-            [
-              {
-                "start": 132,
-                "end": 168,
-                "text": "Type aliases are an undocumented feature that is getting deprecated. Please chime in in the issue if you need it: https://github.com/prisma/prisma/issues/9939",
-                "is_warning": true
-              }
-            ]"#]];
-
-        expected.assert_eq(&lint(dml));
     }
 
     #[test]

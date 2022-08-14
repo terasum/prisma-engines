@@ -6,7 +6,6 @@ mod scalar;
 
 use super::utils;
 use crate::{
-    constants::filters,
     query_document::{ParsedInputMap, ParsedInputValue},
     QueryGraphBuilderError, QueryGraphBuilderResult,
 };
@@ -18,10 +17,10 @@ use filter_grouping::*;
 use prisma_models::{
     prelude::ParentContainer, CompositeFieldRef, Field, ModelRef, PrismaValue, RelationFieldRef, ScalarFieldRef,
 };
+use schema_builder::constants::filters;
 use std::{collections::HashMap, convert::TryInto, str::FromStr};
 
 /// Extracts a filter for a unique selector, i.e. a filter that selects exactly one record.
-#[tracing::instrument(skip(value_map, model))]
 pub fn extract_unique_filter(value_map: ParsedInputMap, model: &ModelRef) -> QueryGraphBuilderResult<Filter> {
     let filters = value_map
         .into_iter()

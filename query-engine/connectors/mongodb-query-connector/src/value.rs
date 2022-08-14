@@ -126,9 +126,6 @@ impl IntoBson for (MongoDbType, PrismaValue) {
             (MongoDbType::Double, PrismaValue::Float(f)) => Bson::Double(f.to_f64().convert(expl::MONGO_DOUBLE)?),
             (MongoDbType::Double, PrismaValue::BigInt(b)) => Bson::Double(b.to_f64().convert(expl::MONGO_DOUBLE)?),
 
-            // Decimal
-            (MongoDbType::Decimal, _) => unimplemented!("Mongo decimals."),
-
             // Int
             (MongoDbType::Int, PrismaValue::Int(b)) => Bson::Int32(b as i32),
             (MongoDbType::Int, PrismaValue::BigInt(b)) => Bson::Int32(b as i32),
@@ -399,7 +396,11 @@ fn read_composite_value(bson: Bson, meta: &CompositeOutputMeta) -> crate::Result
                         (None, OutputMeta::Composite(meta)) if meta.list => {
                             pairs.push((field.clone(), PrismaValue::List(Vec::new())))
                         }
-                        // Fill missing fields with nulls.
+                        // Coerce missing scalars with their default values
+                        (None, OutputMeta::Scalar(meta)) if meta.default.is_some() => {
+                            pairs.push((field.clone(), meta.default.clone().unwrap()))
+                        }
+                        // Fill missing fields without default values with nulls.
                         (None, _) => pairs.push((field.clone(), PrismaValue::Null)),
                     }
                 }

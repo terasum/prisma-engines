@@ -1,4 +1,5 @@
 use indoc::indoc;
+use migration_core::json_rpc::types::*;
 use migration_engine_tests::test_api::*;
 use std::fmt::Write as _;
 
@@ -23,16 +24,13 @@ fn indexes_on_foreign_key_fields_are_not_created_twice(api: TestApi) {
 
     api.schema_push_w_datasource(schema).send();
 
-    let sql_schema = api
-        .assert_schema()
-        .assert_table("Human", |table| {
-            table
-                .assert_foreign_keys_count(1)
-                .assert_fk_on_columns(&["catname"], |fk| fk.assert_references("Cat", &["name"]))
-                .assert_indexes_count(1)
-                .assert_index_on_columns(&["catname"], |idx| idx.assert_is_not_unique())
-        })
-        .into_schema();
+    api.assert_schema().assert_table("Human", |table| {
+        table
+            .assert_foreign_keys_count(1)
+            .assert_fk_on_columns(&["catname"], |fk| fk.assert_references("Cat", &["name"]))
+            .assert_indexes_count(1)
+            .assert_index_on_columns(&["catname"], |idx| idx.assert_is_not_unique())
+    });
 
     // Test that after introspection, we do not migrate further.
     api.schema_push_w_datasource(schema)
@@ -40,8 +38,6 @@ fn indexes_on_foreign_key_fields_are_not_created_twice(api: TestApi) {
         .send()
         .assert_green()
         .assert_no_steps();
-
-    api.assert_schema().assert_equals(&sql_schema);
 }
 
 // We have to test this because one enum on MySQL can map to multiple enums in the database.
@@ -424,4 +420,209 @@ fn mysql_apply_migrations_errors_gives_the_failed_sql(api: TestApi) {
         .unwrap();
 
     expectation.assert_eq(first_segment)
+}
+
+// https://github.com/prisma/prisma/issues/12351
+#[test]
+fn dropping_m2m_relation_from_datamodel_works() {
+    let schema = r#"
+        datasource db {
+            provider = "mysql"
+            url = env("DBURL")
+        }
+
+        model Puppy {
+            name         String @id
+            motherId     String
+            mother       Dog @relation(fields: [motherId], references: [name])
+            dogFriends   Dog[] @relation("puppyFriendships")
+        }
+
+        model Dog {
+            name         String @id
+            puppies      Puppy[]
+            puppyFriends Puppy[] @relation("puppyFriendships")
+        }
+    "#;
+    let schema2 = r#"
+        datasource db {
+            provider = "mysql"
+            url = env("DBURL")
+        }
+
+        model Puppy {
+            name         String @id
+            motherId     String
+            mother       Dog @relation(fields: [motherId], references: [name])
+        }
+
+        model Dog {
+            name         String @id
+            puppies      Puppy[]
+        }
+    "#;
+
+    let tmpdir = tempfile::tempdir().unwrap();
+    let path = super::diff::write_file_to_tmp(schema, &tmpdir, "schema.prisma");
+    let path2 = super::diff::write_file_to_tmp(schema2, &tmpdir, "schema2.prisma");
+
+    let (_result, diff) = super::diff::diff_result(DiffParams {
+        exit_code: None,
+        from: DiffTarget::SchemaDatamodel(SchemaContainer {
+            schema: path.to_str().unwrap().to_owned(),
+        }),
+        to: DiffTarget::SchemaDatamodel(SchemaContainer {
+            schema: path2.to_str().unwrap().to_owned(),
+        }),
+        script: true,
+        shadow_database_url: None,
+    });
+
+    let expected = expect![[r#"
+        -- DropForeignKey
+        ALTER TABLE `_puppyFriendships` DROP FOREIGN KEY `_puppyFriendships_A_fkey`;
+
+        -- DropForeignKey
+        ALTER TABLE `_puppyFriendships` DROP FOREIGN KEY `_puppyFriendships_B_fkey`;
+
+        -- DropTable
+        DROP TABLE `_puppyFriendships`;
+    "#]];
+    expected.assert_eq(&diff);
+}
+
+#[cfg_attr(not(target_os = "windows"), test_connector(tags(Mysql), exclude(Vitess)))]
+fn alter_constraint_name(mut api: TestApi) {
+    let plain_dm = api.datamodel_with_provider(
+        r#"
+         model A {
+           id   Int    @id
+           name String @unique
+           a    String
+           b    String
+           B    B[]    @relation("AtoB")
+           @@unique([a, b])
+           @@index([a])
+         }
+         model B {
+           a   String
+           b   String
+           aId Int
+           A   A      @relation("AtoB", fields: [aId], references: [id])
+           @@index([a,b])
+           @@id([a, b])
+         }
+     "#,
+    );
+
+    let dir = api.create_migrations_directory();
+    api.create_migration("plain", &plain_dm, &dir).send_sync();
+
+    let custom_dm = api.datamodel_with_provider(
+        r#"
+         model A {
+           id   Int    @id
+           name String @unique(map: "CustomUnique")
+           a    String
+           b    String
+           B    B[]    @relation("AtoB")
+           @@unique([a, b], name: "compound", map:"CustomCompoundUnique")
+           @@index([a], map: "CustomIndex")
+         }
+
+         model B {
+           a   String
+           b   String
+           aId Int
+           A   A      @relation("AtoB", map: "CustomFK", fields: [aId], references: [id])
+           @@index([a,b], map: "AnotherCustomIndex")
+           @@id([a, b])
+         }
+     "#,
+    );
+
+    let is_mysql_5_6 = api.is_mysql_5_6();
+    let is_mariadb = api.is_mariadb();
+
+    api.create_migration("custom", &custom_dm, &dir)
+        .send_sync()
+        .assert_migration_directories_count(2)
+        .assert_migration("custom",move |migration| {
+            let expected_script = if is_mysql_5_6 || is_mariadb {
+                expect![[
+                     r#"
+                 -- DropForeignKey
+                 ALTER TABLE `B` DROP FOREIGN KEY `B_aId_fkey`;
+
+                 -- AddForeignKey
+                 ALTER TABLE `B` ADD CONSTRAINT `CustomFK` FOREIGN KEY (`aId`) REFERENCES `A`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+                 -- RedefineIndex
+                 CREATE UNIQUE INDEX `CustomCompoundUnique` ON `A`(`a`, `b`);
+                 DROP INDEX `A_a_b_key` ON `A`;
+
+                 -- RedefineIndex
+                 CREATE INDEX `CustomIndex` ON `A`(`a`);
+                 DROP INDEX `A_a_idx` ON `A`;
+
+                 -- RedefineIndex
+                 CREATE UNIQUE INDEX `CustomUnique` ON `A`(`name`);
+                 DROP INDEX `A_name_key` ON `A`;
+
+                 -- RedefineIndex
+                 CREATE INDEX `AnotherCustomIndex` ON `B`(`a`, `b`);
+                 DROP INDEX `B_a_b_idx` ON `B`;
+                 "#]]
+            } else {
+                expect![[r#"
+                 -- DropForeignKey
+                 ALTER TABLE `B` DROP FOREIGN KEY `B_aId_fkey`;
+
+                 -- AddForeignKey
+                 ALTER TABLE `B` ADD CONSTRAINT `CustomFK` FOREIGN KEY (`aId`) REFERENCES `A`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+                 -- RenameIndex
+                 ALTER TABLE `A` RENAME INDEX `A_a_b_key` TO `CustomCompoundUnique`;
+
+                 -- RenameIndex
+                 ALTER TABLE `A` RENAME INDEX `A_a_idx` TO `CustomIndex`;
+
+                 -- RenameIndex
+                 ALTER TABLE `A` RENAME INDEX `A_name_key` TO `CustomUnique`;
+
+                 -- RenameIndex
+                 ALTER TABLE `B` RENAME INDEX `B_a_b_idx` TO `AnotherCustomIndex`;
+                 "#]]
+            };
+
+            migration.expect_contents(expected_script)
+        });
+}
+
+#[test_connector(tags(Mysql))]
+fn bigint_defaults_work(api: TestApi) {
+    let schema = r#"
+        datasource mypg {
+            provider = "mysql"
+            url = env("TEST_DATABASE_URL")
+        }
+
+        model foo {
+          id  String @id
+          bar BigInt @default(0)
+        }
+    "#;
+    let sql = expect![[r#"
+        -- CreateTable
+        CREATE TABLE `foo` (
+            `id` VARCHAR(191) NOT NULL,
+            `bar` BIGINT NOT NULL DEFAULT 0,
+
+            PRIMARY KEY (`id`)
+        ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    "#]];
+    api.expect_sql_for_schema(schema, &sql);
+
+    api.schema_push(schema).send().assert_green();
+    api.schema_push(schema).send().assert_green().assert_no_steps();
 }

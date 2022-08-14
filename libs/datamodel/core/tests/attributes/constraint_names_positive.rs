@@ -31,19 +31,21 @@ fn multiple_indexes_with_same_name_on_different_models_are_supported_by_mysql() 
     user_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("MyIndexName".to_string()),
-        fields: vec![IndexField::new("id")],
+        fields: vec![IndexField::new_in_model("id")],
         tpe: IndexType::Normal,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 
     post_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("MyIndexName".to_string()),
-        fields: vec![IndexField::new("id")],
+        fields: vec![IndexField::new_in_model("id")],
         tpe: IndexType::Normal,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -76,10 +78,11 @@ fn foreign_keys_and_indexes_with_same_name_on_same_table_are_not_supported_on_my
     a.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("foo".to_string()),
-        fields: vec![IndexField::new("bId")],
+        fields: vec![IndexField::new_in_model("bId")],
         tpe: IndexType::Normal,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -114,19 +117,21 @@ fn multiple_indexes_with_same_name_on_different_models_are_supported_by_mssql() 
     user_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("MyIndexName".to_string()),
-        fields: vec![IndexField::new("id")],
+        fields: vec![IndexField::new_in_model("id")],
         tpe: IndexType::Normal,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 
     post_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("MyIndexName".to_string()),
-        fields: vec![IndexField::new("id")],
+        fields: vec![IndexField::new_in_model("id")],
         tpe: IndexType::Normal,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -163,18 +168,20 @@ fn multiple_constraints_with_same_name_in_different_namespaces_are_supported_by_
     user_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("MyName".to_string()),
-        fields: vec![IndexField::new("id")],
+        fields: vec![IndexField::new_in_model("id")],
         tpe: IndexType::Normal,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 
     post_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("MyOtherName".to_string()),
-        fields: vec![IndexField::new("id")],
+        fields: vec![IndexField::new_in_model("id")],
         tpe: IndexType::Normal,
         defined_on_field: false,
         algorithm: None,
+        clustered: None,
     });
 }

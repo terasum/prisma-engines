@@ -57,7 +57,7 @@ fn serialize_generators_to_cmf() {
         ]"#]];
 
     let config = parse_configuration(schema);
-    let rendered = datamodel::json::mcf::generators_to_json(&config.generators);
+    let rendered = datamodel::mcf::generators_to_json(&config.generators);
 
     expected.assert_eq(&rendered);
 }
@@ -109,7 +109,7 @@ fn preview_features_setting_must_work() {
         ]"#]];
 
     let config = parse_configuration(schema);
-    let rendered = datamodel::json::mcf::generators_to_json(&config.generators);
+    let rendered = datamodel::mcf::generators_to_json(&config.generators);
 
     expected.assert_eq(&rendered);
 }
@@ -119,7 +119,7 @@ fn hidden_preview_features_setting_must_work() {
     let schema = indoc! {r#"
         generator go {
           provider = "go"
-          previewFeatures = ["mongoDb"]
+          previewFeatures = ["fullTextIndex"]
         }
     "#};
 
@@ -135,21 +135,22 @@ fn hidden_preview_features_setting_must_work() {
             "config": {},
             "binaryTargets": [],
             "previewFeatures": [
-              "mongoDb"
+              "fullTextIndex"
             ]
           }
         ]"#]];
 
     let config = parse_configuration(schema);
-    let rendered = datamodel::json::mcf::generators_to_json(&config.generators);
+    let rendered = datamodel::mcf::generators_to_json(&config.generators);
 
     expected.assert_eq(&rendered);
 }
+
 #[test]
 fn back_slashes_in_providers_must_work() {
     let schema = indoc! {r#"
         generator mygen {
-          provider = "../folder\ with\\ space/my\ generator.js"
+          provider = "../folder\twith\ttabs/my\tgenerator.js"
         }
     "#};
 
@@ -159,7 +160,7 @@ fn back_slashes_in_providers_must_work() {
             "name": "mygen",
             "provider": {
               "fromEnvVar": null,
-              "value": "../folder with\\ space/my generator.js"
+              "value": "../folder\twith\ttabs/my\tgenerator.js"
             },
             "output": null,
             "config": {},
@@ -169,7 +170,7 @@ fn back_slashes_in_providers_must_work() {
         ]"#]];
 
     let config = parse_configuration(schema);
-    let rendered = datamodel::json::mcf::generators_to_json(&config.generators);
+    let rendered = datamodel::mcf::generators_to_json(&config.generators);
 
     expected.assert_eq(&rendered);
 }
@@ -209,7 +210,7 @@ fn new_lines_in_generator_must_work() {
         ]"#]];
 
     let config = parse_configuration(schema);
-    let rendered = datamodel::json::mcf::generators_to_json(&config.generators);
+    let rendered = datamodel::mcf::generators_to_json(&config.generators);
 
     expected.assert_eq(&rendered);
 }
@@ -258,7 +259,7 @@ fn nice_error_for_unknown_generator_preview_feature() {
         .unwrap_err();
 
     let expectation = expect![[r#"
-        [1;91merror[0m: [1mThe preview feature "foo" is not known. Expected one of: filterJson, referentialIntegrity, mongoDb, interactiveTransactions, fullTextSearch, fullTextIndex, dataProxy, extendedIndexes, cockroachdb, tracing[0m
+        [1;91merror[0m: [1mThe preview feature "foo" is not known. Expected one of: referentialIntegrity, interactiveTransactions, fullTextSearch, fullTextIndex, tracing, metrics, orderByNulls[0m
           [1;94m-->[0m  [4mschema.prisma:3[0m
         [1;94m   | [0m
         [1;94m 2 | [0m  provider = "prisma-client-js"
@@ -308,7 +309,7 @@ fn binary_targets_from_env_var_should_work() {
         ]"#]];
 
     let config = parse_configuration(schema);
-    let rendered = datamodel::json::mcf::generators_to_json(&config.generators);
+    let rendered = datamodel::mcf::generators_to_json(&config.generators);
 
     expected.assert_eq(&rendered);
 }
@@ -341,7 +342,7 @@ fn retain_env_var_definitions_in_generator_block() {
         ]"#]];
 
     let config = parse_configuration(schema);
-    let rendered = datamodel::json::mcf::generators_to_json(&config.generators);
+    let rendered = datamodel::mcf::generators_to_json(&config.generators);
 
     expected.assert_eq(&rendered);
 }

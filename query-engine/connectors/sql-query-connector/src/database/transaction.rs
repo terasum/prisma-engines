@@ -1,29 +1,35 @@
-use crate::SqlError;
-use crate::{database::operations::*, sql_info::SqlInfo};
+use super::catch;
+use crate::{database::operations::*, sql_info::SqlInfo, SqlError};
 use async_trait::async_trait;
 use connector::{ConnectionLike, RelAggregationSelection};
 use connector_interface::{
     self as connector, filter::Filter, AggregationRow, AggregationSelection, QueryArguments, ReadOperations,
     RecordFilter, Transaction, WriteArgs, WriteOperations,
 };
+use datamodel::common::preview_features::PreviewFeature;
 use prisma_models::{prelude::*, SelectionResult};
 use prisma_value::PrismaValue;
 use quaint::prelude::ConnectionInfo;
 use std::collections::HashMap;
 
-use super::catch;
-
 pub struct SqlConnectorTransaction<'tx> {
     inner: quaint::connector::Transaction<'tx>,
     connection_info: ConnectionInfo,
+    features: Vec<PreviewFeature>,
 }
 
 impl<'tx> SqlConnectorTransaction<'tx> {
-    pub fn new(tx: quaint::connector::Transaction<'tx>, connection_info: &ConnectionInfo) -> Self {
+    pub fn new(
+        tx: quaint::connector::Transaction<'tx>,
+        connection_info: &ConnectionInfo,
+        features: Vec<PreviewFeature>,
+    ) -> Self {
         let connection_info = connection_info.clone();
+
         Self {
             inner: tx,
             connection_info,
+            features,
         }
     }
 }
@@ -32,7 +38,6 @@ impl<'tx> ConnectionLike for SqlConnectorTransaction<'tx> {}
 
 #[async_trait]
 impl<'tx> Transaction for SqlConnectorTransaction<'tx> {
-    #[tracing::instrument(skip(self))]
     async fn commit(&mut self) -> connector::Result<()> {
         catch(self.connection_info.clone(), async move {
             Ok(self.inner.commit().await.map_err(SqlError::from)?)
@@ -40,7 +45,6 @@ impl<'tx> Transaction for SqlConnectorTransaction<'tx> {
         .await
     }
 
-    #[tracing::instrument(skip(self))]
     async fn rollback(&mut self) -> connector::Result<()> {
         catch(self.connection_info.clone(), async move {
             let res = self.inner.rollback().await.map_err(SqlError::from);
@@ -230,7 +234,7 @@ impl<'tx> WriteOperations for SqlConnectorTransaction<'tx> {
 
     async fn execute_raw(&mut self, inputs: HashMap<String, PrismaValue>) -> connector::Result<usize> {
         catch(self.connection_info.clone(), async move {
-            write::execute_raw(&self.inner, inputs).await
+            write::execute_raw(&self.inner, &self.features, inputs).await
         })
         .await
     }
@@ -242,7 +246,13 @@ impl<'tx> WriteOperations for SqlConnectorTransaction<'tx> {
         _query_type: Option<String>,
     ) -> connector::Result<serde_json::Value> {
         catch(self.connection_info.clone(), async move {
-            write::query_raw(&self.inner, inputs).await
+            write::query_raw(
+                &self.inner,
+                SqlInfo::from(&self.connection_info),
+                &self.features,
+                inputs,
+            )
+            .await
         })
         .await
     }

@@ -1,4 +1,4 @@
-use super::{Argument, ArgumentsList, Identifier, Span, WithIdentifier, WithSpan};
+use super::{ArgumentsList, Identifier, Span, WithIdentifier, WithSpan};
 use std::ops::Index;
 
 /// An attribute (following `@` or `@@``) on a model, model field, enum, enum value or composite
@@ -24,18 +24,6 @@ pub struct Attribute {
 }
 
 impl Attribute {
-    /// Create a new attribute node from a name and a list of arguments.
-    pub fn new(name: &str, arguments: Vec<Argument>) -> Attribute {
-        Attribute {
-            name: Identifier::new(name),
-            arguments: ArgumentsList {
-                arguments,
-                ..Default::default()
-            },
-            span: Span::empty(),
-        }
-    }
-
     /// Try to find the argument and return its span.
     pub fn span_for_argument(&self, argument: &str) -> Option<Span> {
         self.arguments
@@ -52,8 +40,8 @@ impl WithIdentifier for Attribute {
 }
 
 impl WithSpan for Attribute {
-    fn span(&self) -> &Span {
-        &self.span
+    fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -65,7 +53,6 @@ pub enum AttributeContainer {
     Enum(super::EnumId),
     EnumValue(super::EnumId, u32),
     CompositeTypeField(super::CompositeTypeId, super::FieldId),
-    TypeAlias(super::AliasId),
 }
 
 impl From<super::ModelId> for AttributeContainer {
@@ -83,12 +70,6 @@ impl From<(super::ModelId, super::FieldId)> for AttributeContainer {
 impl From<super::EnumId> for AttributeContainer {
     fn from(v: super::EnumId) -> Self {
         Self::Enum(v)
-    }
-}
-
-impl From<super::AliasId> for AttributeContainer {
-    fn from(v: super::AliasId) -> Self {
-        Self::TypeAlias(v)
     }
 }
 
@@ -124,7 +105,6 @@ impl Index<AttributeContainer> for super::SchemaAst {
             AttributeContainer::Enum(enum_id) => &self[enum_id].attributes,
             AttributeContainer::EnumValue(enum_id, value_idx) => &self[enum_id].values[value_idx as usize].attributes,
             AttributeContainer::CompositeTypeField(ctid, field_id) => &self[ctid][field_id].attributes,
-            AttributeContainer::TypeAlias(alias_id) => &self[alias_id].attributes,
         }
     }
 }

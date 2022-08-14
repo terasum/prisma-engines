@@ -1,12 +1,13 @@
 use crate::{
     query_ast::*,
     query_graph::{Flow, Node, NodeRef, QueryGraph, QueryGraphDependency},
-    ConnectorContext, ParsedInputValue, QueryGraphBuilderError, QueryGraphBuilderResult,
+    ParsedInputValue, QueryGraphBuilderError, QueryGraphBuilderResult,
 };
 use connector::{DatasourceFieldName, Filter, RecordFilter, WriteArgs, WriteOperation};
 use datamodel::dml::ReferentialAction;
 use indexmap::IndexMap;
 use prisma_models::{FieldSelection, ModelRef, PrismaValue, RelationFieldRef, SelectionResult};
+use schema::ConnectorContext;
 use std::sync::Arc;
 
 /// Coerces single values (`ParsedInputValue::Single` and `ParsedInputValue::Map`) into a vector.
@@ -85,7 +86,6 @@ fn get_selected_fields(model: &ModelRef, selection: FieldSelection) -> FieldSele
 /// - `parent_node` needs to return a blog ID during execution.
 /// - `parent_relation_field` is the field on the `Blog` model, e.g. `posts`.
 /// - `filter` narrows down posts, e.g. posts where their titles start with a given string.
-#[tracing::instrument(skip(graph, parent_node, parent_relation_field, filter))]
 pub fn insert_find_children_by_parent_node<T>(
     graph: &mut QueryGraph,
     parent_node: &NodeRef,
@@ -191,7 +191,6 @@ where
 /// the relation is also inlined on that models side, so we put that check into the if flow.
 ///
 /// Returns a `NodeRef` to the "Read Related" node in the graph illustrated above.
-#[tracing::instrument(skip(graph, parent_node, parent_relation_field))]
 pub fn insert_existing_1to1_related_model_checks(
     graph: &mut QueryGraph,
     parent_node: &NodeRef,
@@ -307,7 +306,6 @@ pub fn insert_existing_1to1_related_model_checks(
 ///               │                                                         │                                        │
 ///               └─────────────────────────────────────────────────────────┴────────────────────────────────────────┘
 /// ```
-#[tracing::instrument(skip(graph, model_to_delete, parent_node, child_node))]
 pub fn insert_emulated_on_delete(
     graph: &mut QueryGraph,
     connector_ctx: &ConnectorContext,
@@ -448,7 +446,7 @@ pub fn emulate_on_delete_cascade(
 ) -> QueryGraphBuilderResult<()> {
     let dependent_model = relation_field.model();
     let parent_relation_field = relation_field.related_field();
-    let child_model_identifier = relation_field.related_model().primary_identifier();
+    let child_model_identifier = parent_relation_field.related_model().primary_identifier();
 
     // Records that need to be deleted for the cascade.
     let dependent_records_node =
@@ -473,7 +471,7 @@ pub fn emulate_on_delete_cascade(
         &dependent_records_node,
         &delete_dependents_node,
         QueryGraphDependency::ProjectedDataDependency(
-            child_model_identifier.clone(),
+            child_model_identifier,
             Box::new(move |mut delete_dependents_node, dependent_ids| {
                 if let Node::Query(Query::Write(WriteQuery::DeleteManyRecords(ref mut dmr))) = delete_dependents_node {
                     dmr.record_filter = dependent_ids.into();
@@ -540,7 +538,7 @@ pub fn emulate_on_delete_set_null(
 ) -> QueryGraphBuilderResult<()> {
     let dependent_model = relation_field.model();
     let parent_relation_field = relation_field.related_field();
-    let child_model_identifier = relation_field.related_model().primary_identifier().clone();
+    let child_model_identifier = parent_relation_field.related_model().primary_identifier();
     let child_fks = if relation_field.is_inlined_on_enclosing_model() {
         relation_field.scalar_fields()
     } else {
@@ -655,7 +653,7 @@ pub fn emulate_on_update_set_null(
 ) -> QueryGraphBuilderResult<()> {
     let dependent_model = relation_field.model();
     let parent_relation_field = relation_field.related_field();
-    let child_model_identifier = relation_field.related_model().primary_identifier().clone();
+    let child_model_identifier = parent_relation_field.related_model().primary_identifier();
 
     // Only the nullable fks should be updated to null
     let (parent_pks, child_fks) = if relation_field.is_inlined_on_enclosing_model() {
@@ -818,7 +816,6 @@ pub fn emulate_on_update_set_null(
 ///               │                                                         │                                        │
 ///               └─────────────────────────────────────────────────────────┴────────────────────────────────────────┘
 /// ```
-#[tracing::instrument(skip(graph, model_to_update, parent_node, child_node))]
 pub fn insert_emulated_on_update_with_intermediary_node(
     graph: &mut QueryGraph,
     connector_ctx: &ConnectorContext,
@@ -867,7 +864,6 @@ pub fn insert_emulated_on_update_with_intermediary_node(
     Ok(Some(join_node))
 }
 
-#[tracing::instrument(skip(graph, model_to_update, parent_node, child_node))]
 pub fn insert_emulated_on_update(
     graph: &mut QueryGraph,
     connector_ctx: &ConnectorContext,
@@ -960,7 +956,7 @@ pub fn emulate_on_update_cascade(
 ) -> QueryGraphBuilderResult<()> {
     let dependent_model = relation_field.model();
     let parent_relation_field = relation_field.related_field();
-    let child_model_identifier = relation_field.related_model().primary_identifier();
+    let child_model_identifier = parent_relation_field.related_model().primary_identifier();
     let (parent_pks, child_fks) = if relation_field.is_inlined_on_enclosing_model() {
         (relation_field.referenced_fields(), relation_field.scalar_fields())
     } else {
@@ -970,12 +966,10 @@ pub fn emulate_on_update_cascade(
         )
     };
 
-    // Records that need to be updated for the cascade.
-    let dependent_records_node =
-        insert_find_children_by_parent_node(graph, parent_node, &parent_relation_field, Filter::empty())?;
-
     // Unwraps are safe as in this stage, no node content can be replaced.
     let parent_update_args = extract_update_args(graph.node_content(child_node).unwrap());
+
+    // Computes update arguments for child based on parent update arguments
     let child_update_args: Vec<_> = parent_pks
         .into_iter()
         .zip(child_fks)
@@ -985,6 +979,15 @@ pub fn emulate_on_update_cascade(
                 .map(|value| (DatasourceFieldName::from(&child_fk), value.clone()))
         })
         .collect();
+
+    // If nothing was found to be updated for the child, stop here
+    if child_update_args.is_empty() {
+        return Ok(());
+    }
+
+    // Records that need to be updated for the cascade.
+    let dependent_records_node =
+        insert_find_children_by_parent_node(graph, parent_node, &parent_relation_field, Filter::empty())?;
 
     let update_query = WriteQuery::UpdateManyRecords(UpdateManyRecords {
         model: dependent_model.clone(),
@@ -1006,7 +1009,7 @@ pub fn emulate_on_update_cascade(
         &dependent_records_node,
         &update_dependents_node,
         QueryGraphDependency::ProjectedDataDependency(
-            child_model_identifier.clone(),
+            child_model_identifier,
             Box::new(move |mut update_dependents_node, dependent_ids| {
                 if let Node::Query(Query::Write(WriteQuery::UpdateManyRecords(ref mut dmr))) = update_dependents_node {
                     dmr.record_filter = dependent_ids.into();

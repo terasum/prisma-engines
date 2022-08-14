@@ -569,7 +569,7 @@ fn issue4822() {
         [1;94m   | [0m
     "#]];
 
-    expect.assert_eq(&datamodel::parse_schema(dml).map(drop).unwrap_err());
+    expect_error(dml, &expect);
 }
 
 #[test]
@@ -773,7 +773,7 @@ fn mapping_foreign_keys_with_a_name_that_is_too_long_should_error() {
           [1;94m-->[0m  [4mschema.prisma:19[0m
         [1;94m   | [0m
         [1;94m18 | [0m  user_id Int
-        [1;94m19 | [0m  user    User   @[1;91mrelation(fields:[post_id], references: [id], map: "IfYouAreGoingToPickTheNameYourselfYouShouldReallyPickSomethingShortAndSweetInsteadOfASuperLongNameViolatingLengthLimits")[0m
+        [1;94m19 | [0m  user    User   [1;91m@relation(fields:[post_id], references: [id], map: "IfYouAreGoingToPickTheNameYourselfYouShouldReallyPickSomethingShortAndSweetInsteadOfASuperLongNameViolatingLengthLimits")[0m
         [1;94m   | [0m
     "#]];
 
@@ -785,7 +785,7 @@ fn mapping_foreign_keys_on_sqlite_should_error() {
     let dml = indoc! {r#"
         datasource test {
           provider = "sqlite"
-          url = "sqlite://..."
+          url = "file:."
         }
 
         model User {
@@ -805,7 +805,7 @@ fn mapping_foreign_keys_on_sqlite_should_error() {
           [1;94m-->[0m  [4mschema.prisma:14[0m
         [1;94m   | [0m
         [1;94m13 | [0m  user_id Int
-        [1;94m14 | [0m  user    User   @[1;91mrelation(fields:[post_id], references: [id], map: "NoNamedForeignKeysOnSQLite")[0m
+        [1;94m14 | [0m  user    User   [1;91m@relation(fields:[post_id], references: [id], map: "NoNamedForeignKeysOnSQLite")[0m
         [1;94m   | [0m
     "#]];
 
@@ -820,12 +820,6 @@ fn relation_field_in_composite_type_errors() {
             url = "mongodb://"
         }
 
-        generator client {
-            provider = "prisma-client-js"
-            previewFeatures = ["mongoDb"]
-        }
-
-
         type Address {
             street String
             test Test
@@ -838,10 +832,10 @@ fn relation_field_in_composite_type_errors() {
 
     let expect = expect![[r#"
         [1;91merror[0m: [1mError validating composite type "Address": Test refers to a model, making this a relation field. Relation fields inside composite types are not supported.[0m
-          [1;94m-->[0m  [4mschema.prisma:15[0m
+          [1;94m-->[0m  [4mschema.prisma:9[0m
         [1;94m   | [0m
-        [1;94m14 | [0m            street String
-        [1;94m15 | [0m            test [1;91mTest[0m
+        [1;94m 8 | [0m            street String
+        [1;94m 9 | [0m            test [1;91mTest[0m
         [1;94m   | [0m
     "#]];
 
@@ -856,12 +850,6 @@ fn relation_attribute_on_a_composite_field_errors() {
             url = "mongodb://"
         }
 
-        generator client {
-            provider = "prisma-client-js"
-            previewFeatures = ["mongoDb"]
-        }
-
-
         type Address {
             street String
         }
@@ -874,16 +862,16 @@ fn relation_attribute_on_a_composite_field_errors() {
 
     let expect = expect![[r#"
         [1;91merror[0m: [1mError parsing attribute "@relation": Invalid field type, not a relation.[0m
-          [1;94m-->[0m  [4mschema.prisma:19[0m
+          [1;94m-->[0m  [4mschema.prisma:13[0m
         [1;94m   | [0m
-        [1;94m18 | [0m            id Int @id
-        [1;94m19 | [0m            addres Address? @[1;91mrelation("TestAddress")[0m
+        [1;94m12 | [0m            id Int @id
+        [1;94m13 | [0m            addres Address? [1;91m@relation("TestAddress")[0m
         [1;94m   | [0m
         [1;91merror[0m: [1mNo such argument.[0m
-          [1;94m-->[0m  [4mschema.prisma:19[0m
+          [1;94m-->[0m  [4mschema.prisma:13[0m
         [1;94m   | [0m
-        [1;94m18 | [0m            id Int @id
-        [1;94m19 | [0m            addres Address? @relation([1;91m"TestAddress"[0m)
+        [1;94m12 | [0m            id Int @id
+        [1;94m13 | [0m            addres Address? @relation([1;91m"TestAddress"[0m)
         [1;94m   | [0m
     "#]];
 
@@ -924,4 +912,196 @@ fn a_typoed_relation_should_fail_gracefully() {
     "#]];
 
     expect.assert_eq(&datamodel::parse_schema(dml).map(drop).unwrap_err());
+}
+
+#[test]
+fn cannot_use_references_with_many_to_many_relations() {
+    let dml = indoc! {r#"
+        model User {
+          id      Int    @id
+          post_id Int
+          posts   Post[] @relation("a", references: [id])
+        }
+
+        model Post {
+          id      Int    @id
+          user_id Int
+          users   User[] @relation("a", references: [id])
+        }
+    "#};
+
+    let expect = expect![[r#"
+        [1;91merror[0m: [1mError parsing attribute "@relation": Implicit many-to-many relation should not have references argument defined. Either remove it, or change the relation to one-to-many.[0m
+          [1;94m-->[0m  [4mschema.prisma:10[0m
+        [1;94m   | [0m
+        [1;94m 9 | [0m  user_id Int
+        [1;94m10 | [0m  [1;91musers   User[] @relation("a", references: [id])[0m
+        [1;94m11 | [0m}
+        [1;94m   | [0m
+        [1;91merror[0m: [1mError parsing attribute "@relation": Implicit many-to-many relation should not have references argument defined. Either remove it, or change the relation to one-to-many.[0m
+          [1;94m-->[0m  [4mschema.prisma:4[0m
+        [1;94m   | [0m
+        [1;94m 3 | [0m  post_id Int
+        [1;94m 4 | [0m  [1;91mposts   Post[] @relation("a", references: [id])[0m
+        [1;94m 5 | [0m}
+        [1;94m   | [0m
+    "#]];
+
+    expect.assert_eq(&datamodel::parse_schema(dml).map(drop).unwrap_err());
+}
+
+#[test]
+fn should_fail_if_not_using_unique_constraint_with_singular_one_to_one() {
+    let dml = indoc! {r#"
+        model A {
+          id Int  @id
+          fk Int?
+          b  B?   @relation(fields: [fk], references: [id])
+        }
+
+        model B {
+          id Int @id
+          a  A?
+        }
+    "#};
+
+    let expect = expect![[r#"
+        [1;91merror[0m: [1mError parsing attribute "@relation": A one-to-one relation must use unique fields on the defining side. Either add an `@unique` attribute to the field `fk`, or change the relation to one-to-many.[0m
+          [1;94m-->[0m  [4mschema.prisma:4[0m
+        [1;94m   | [0m
+        [1;94m 3 | [0m  fk Int?
+        [1;94m 4 | [0m  [1;91mb  B?   @relation(fields: [fk], references: [id])[0m
+        [1;94m 5 | [0m}
+        [1;94m   | [0m
+    "#]];
+
+    expect.assert_eq(&datamodel::parse_schema(dml).map(drop).unwrap_err());
+}
+
+#[test]
+fn should_fail_if_not_using_unique_constraint_with_compound_one_to_one() {
+    let dml = indoc! {r#"
+        model A {
+          id Int  @id
+          fk1 Int?
+          fk2 Int?
+          b   B?   @relation(fields: [fk1, fk2], references: [id1, id2])
+        }
+
+        model B {
+          id1 Int
+          id2 Int
+          a   A?
+
+          @@id([id1, id2])
+        }
+    "#};
+
+    let expect = expect![[r#"
+        [1;91merror[0m: [1mError parsing attribute "@relation": A one-to-one relation must use unique fields on the defining side. Either add an `@@unique([fk1, fk2])` attribute to the model, or change the relation to one-to-many.[0m
+          [1;94m-->[0m  [4mschema.prisma:5[0m
+        [1;94m   | [0m
+        [1;94m 4 | [0m  fk2 Int?
+        [1;94m 5 | [0m  [1;91mb   B?   @relation(fields: [fk1, fk2], references: [id1, id2])[0m
+        [1;94m 6 | [0m}
+        [1;94m   | [0m
+    "#]];
+
+    expect.assert_eq(&datamodel::parse_schema(dml).map(drop).unwrap_err());
+}
+
+#[test]
+fn should_fail_if_not_using_unique_constraint_with_single_one_to_many() {
+    let dml = indoc! {r#"
+        model A {
+          id         Int          @id @default(autoincrement())
+          custom_id  String
+          B          B[]
+
+          @@index([custom_id])
+        }
+
+        model B {
+          id        Int     @id @default(autoincrement())
+          a_id String
+          A         A @relation(fields: [a_id], references: [custom_id])
+        }
+    "#};
+
+    let expect = expect![[r#"
+        [1;91merror[0m: [1mError parsing attribute "@relation": The argument `references` must refer to a unique criteria in the related model. Consider adding an `@unique` attribute to the field `custom_id` in the model `A`.[0m
+          [1;94m-->[0m  [4mschema.prisma:22[0m
+        [1;94m   | [0m
+        [1;94m21 | [0m  a_id String
+        [1;94m22 | [0m  [1;91mA         A @relation(fields: [a_id], references: [custom_id])[0m
+        [1;94m23 | [0m}
+        [1;94m   | [0m
+    "#]];
+
+    let dml = with_header(dml, Provider::Mysql, &[]);
+
+    expect.assert_eq(&datamodel::parse_schema(&dml).map(drop).unwrap_err());
+}
+
+#[test]
+fn multiple_relation_validation_errors_do_not_prevent_each_other_across_models() {
+    let schema = r#"
+        generator client {
+          provider      = "prisma-client-js"
+          binaryTargets = ["darwin"]
+        }
+
+        datasource db {
+          provider = "mysql"
+          url      = env("DATABASE_URL")
+        }
+
+        model Post {
+          POST_ID            Int  @id @db.UnsignedInt
+          USER_NON_UNIQUE_ID Int  @db.UnsignedInt
+          User               User @relation(fields: [USER_NON_UNIQUE_ID], references: [USER_NON_UNIQUE_ID], onUpdate: Restrict, map: "FK_USER_NON_UNIQUE_ID")
+
+          @@index([USER_NON_UNIQUE_ID], map: "FK_USER_NON_UNIQUE_ID")
+        }
+
+        model User {
+          USER_ID            Int    @id @default(autoincrement()) @db.UnsignedInt
+          USER_NON_UNIQUE_ID Int    @db.UnsignedInt
+          Post               Post[]
+
+          @@index([USER_NON_UNIQUE_ID], map: "index_name")
+        }
+
+        model stock {
+          STOCK_ID            Int           @id @default(autoincrement()) @db.UnsignedInt
+          STOCK_NON_UNIQUE_ID Int           @db.UnsignedInt
+          stock_detail        stock_detail?
+
+          @@index([STOCK_NON_UNIQUE_ID], map: "index_name")
+        }
+
+        model stock_detail {
+          STOCK_ID Int   @id @db.UnsignedInt
+          stock    stock @relation(fields: [STOCK_ID], references: [STOCK_NON_UNIQUE_ID], onUpdate: Restrict, map: "FK_STOCK_NON_UNIQUE_ID")
+        }
+    "#;
+
+    let expected_error = expect![[r#"
+        [1;91merror[0m: [1mError parsing attribute "@relation": The argument `references` must refer to a unique criteria in the related model. Consider adding an `@unique` attribute to the field `USER_NON_UNIQUE_ID` in the model `User`.[0m
+          [1;94m-->[0m  [4mschema.prisma:15[0m
+        [1;94m   | [0m
+        [1;94m14 | [0m          USER_NON_UNIQUE_ID Int  @db.UnsignedInt
+        [1;94m15 | [0m          [1;91mUser               User @relation(fields: [USER_NON_UNIQUE_ID], references: [USER_NON_UNIQUE_ID], onUpdate: Restrict, map: "FK_USER_NON_UNIQUE_ID")[0m
+        [1;94m16 | [0m
+        [1;94m   | [0m
+        [1;91merror[0m: [1mError parsing attribute "@relation": The argument `references` must refer to a unique criteria in the related model. Consider adding an `@unique` attribute to the field `STOCK_NON_UNIQUE_ID` in the model `stock`.[0m
+          [1;94m-->[0m  [4mschema.prisma:38[0m
+        [1;94m   | [0m
+        [1;94m37 | [0m          STOCK_ID Int   @id @db.UnsignedInt
+        [1;94m38 | [0m          [1;91mstock    stock @relation(fields: [STOCK_ID], references: [STOCK_NON_UNIQUE_ID], onUpdate: Restrict, map: "FK_STOCK_NON_UNIQUE_ID")[0m
+        [1;94m39 | [0m        }
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expected_error)
 }

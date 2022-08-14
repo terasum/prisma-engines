@@ -20,8 +20,8 @@ tokio = "1.0"
 tracing = "0.1"
 tracing-futures = "0.2"
 uuid = "0.8"
-opentelemetry = { version = "0.16", features = ["tokio"] }
-tracing-opentelemetry = "0.16"
+opentelemetry = { version = "0.17", features = ["tokio"] }
+tracing-opentelemetry = "0.17.3"
 
 [dependencies.quaint]
 features = [
@@ -34,20 +34,19 @@ features = [
   "mysql",
   "mssql",
   "bigdecimal",
+  "fmt-sql"
 ]
 git = "https://github.com/prisma/quaint"
-rev = "479e08a41b13902028906bc05f778688c06a3f18"
+rev = "fb4fe90682b4fecb485fd0d6975dd15a3bc9616b"
 
 [dependencies.connector-interface]
 package = "query-connector"
 path = "../query-connector"
 
 [dependencies.prisma-models]
-features = ["sql-ext"]
 path = "../../prisma-models"
 
 [dependencies.prisma-value]
-features = ["sql-ext"]
 path = "../../../libs/prisma-value"
 
 [dependencies.chrono]
@@ -56,6 +55,10 @@ version = "0.4"
 
 [dependencies.datamodel]
 path = "../../../libs/datamodel/core"
+features = ["default_generators"]
+
+[dependencies.sql-datamodel-connector]
+path = "../../../libs/datamodel/connectors/sql-datamodel-connector"
 
 [dependencies.serde]
 features = ["derive"]

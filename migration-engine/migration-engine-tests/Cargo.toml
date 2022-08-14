@@ -1,7 +1,6 @@
 [package]
 name = "migration-engine-tests"
 version = "0.1.0"
-authors = ["Tom Houlé <tom@tomhoule.com>"]
 edition = "2021"
 
 [dependencies]
@@ -15,7 +14,6 @@ test-macros = { path = "../../libs/test-macros" }
 test-setup = { path = "../../libs/test-setup" }
 prisma-value = { path = "../../libs/prisma-value" }
 
-async-trait = "0.1.0"
 bigdecimal = "0.2"
 chrono = "0.4.15"
 connection-string = "0.1.13"
@@ -35,5 +33,5 @@ url = "2.1.1"
 
 [dependencies.quaint]
 git = "https://github.com/prisma/quaint"
-rev = "479e08a41b13902028906bc05f778688c06a3f18"
+rev = "fb4fe90682b4fecb485fd0d6975dd15a3bc9616b"
 features = ["vendored-openssl"]

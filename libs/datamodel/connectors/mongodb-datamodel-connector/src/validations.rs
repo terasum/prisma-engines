@@ -20,7 +20,7 @@ pub(super) fn objectid_type_required_with_auto_attribute(field: ScalarFieldWalke
         "MongoDB `@default(auto())` fields must have `ObjectId` native type.",
         field.model().name(),
         field.name(),
-        field.ast_field().span,
+        field.ast_field().span(),
     );
 
     errors.push_error(err);
@@ -40,7 +40,7 @@ pub(super) fn auto_attribute_must_be_an_id(field: ScalarFieldWalker<'_>, errors:
         "MongoDB `@default(auto())` fields must have the `@id` attribute.",
         field.model().name(),
         field.name(),
-        field.ast_field().span,
+        field.ast_field().span(),
     );
 
     errors.push_error(err);
@@ -56,7 +56,7 @@ pub(super) fn dbgenerated_attribute_is_not_allowed(field: ScalarFieldWalker<'_>,
         "The `dbgenerated()` function is not allowed with MongoDB. Please use `auto()` instead.",
         field.model().name(),
         field.name(),
-        field.ast_field().span,
+        field.ast_field().span(),
     );
     errors.push_error(err);
 }
@@ -80,13 +80,18 @@ pub(super) fn id_field_must_have_a_correct_mapped_name(pk: PrimaryKeyWalker<'_>,
         Some(name) => {
             let msg = format!("MongoDB model IDs must have a @map(\"_id\") annotation, found @map(\"{name}\").",);
 
-            DatamodelError::new_field_validation_error(&msg, field.model().name(), field.name(), field.ast_field().span)
+            DatamodelError::new_field_validation_error(
+                &msg,
+                field.model().name(),
+                field.name(),
+                field.ast_field().span(),
+            )
         }
         None => DatamodelError::new_field_validation_error(
             "MongoDB model IDs must have a @map(\"_id\") annotations.",
             field.model().name(),
             field.name(),
-            field.ast_field().span,
+            field.ast_field().span(),
         ),
     };
 
@@ -101,22 +106,17 @@ pub(super) fn id_must_be_defined(model: ModelWalker<'_>, errors: &mut Diagnostic
 
     errors.push_error(DatamodelError::new_invalid_model_error(
         "MongoDB models require exactly one identity field annotated with @id",
-        model.ast_model().span,
+        model.ast_model().span(),
     ));
 }
 
 /// We can define only one index with the same parameters.
 pub(crate) fn index_is_not_defined_multiple_times_to_same_fields(index: IndexWalker<'_>, errors: &mut Diagnostics) {
-    let attr = if let Some(attribute) = index.ast_attribute() {
-        attribute
-    } else {
-        return;
-    };
+    let attr = index.ast_attribute();
 
     let hits = index
         .model()
         .indexes()
-        .filter(|i| !i.is_implicit())
         .filter(|i| i.attribute_id() != index.attribute_id())
         .filter(|i| i.contains_exactly_the_fields(index.scalar_field_attributes()))
         .count();
@@ -129,19 +129,13 @@ pub(crate) fn index_is_not_defined_multiple_times_to_same_fields(index: IndexWal
 
     errors.push_error(DatamodelError::new_attribute_validation_error(
         "Index already exists in the model.",
-        &format!("@{attr_name}"),
-        *attr.span(),
+        &format!("@@{attr_name}"),
+        attr.span(),
     ))
 }
 
 /// A field cannot have `@id` and `@unique` attributes at the same time.
 pub(crate) fn unique_cannot_be_defined_to_id_field(index: IndexWalker<'_>, errors: &mut Diagnostics) {
-    let attr = if let Some(attribute) = index.ast_attribute() {
-        attribute
-    } else {
-        return;
-    };
-
     if !index.is_unique() {
         return;
     }
@@ -158,8 +152,8 @@ pub(crate) fn unique_cannot_be_defined_to_id_field(index: IndexWalker<'_>, error
 
     errors.push_error(DatamodelError::new_attribute_validation_error(
         "The same field cannot be an id and unique on MongoDB.",
-        "unique",
-        *attr.span(),
+        index.attribute_name(),
+        index.ast_attribute().span(),
     ));
 }
 
@@ -175,7 +169,7 @@ pub(crate) fn field_name_uses_valid_characters(field: ScalarFieldWalker<'_>, err
     if name.starts_with('$') {
         errors.push_error(DatamodelError::new_attribute_validation_error(
             "The field name cannot start with a `$` character",
-            "map",
+            "@map",
             span,
         ));
     }
@@ -183,7 +177,7 @@ pub(crate) fn field_name_uses_valid_characters(field: ScalarFieldWalker<'_>, err
     if name.contains('.') {
         errors.push_error(DatamodelError::new_attribute_validation_error(
             "The field name cannot contain a `.` character",
-            "map",
+            "@map",
             span,
         ));
     }

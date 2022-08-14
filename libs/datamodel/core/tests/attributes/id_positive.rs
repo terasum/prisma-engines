@@ -127,6 +127,7 @@ fn multi_field_ids_must_work() {
         db_name: None,
         fields: vec![PrimaryKeyField::new("a"), PrimaryKeyField::new("b")],
         defined_on_field: false,
+        clustered: None,
     });
 }
 
@@ -145,15 +146,17 @@ fn should_allow_unique_and_id_on_same_field() {
         db_name: None,
         fields: vec![PrimaryKeyField::new("id")],
         defined_on_field: true,
+        clustered: None,
     });
 
     user_model.assert_has_index(IndexDefinition {
         name: None,
         db_name: Some("Model_id_key".to_string()),
-        fields: vec![IndexField::new("id")],
+        fields: vec![IndexField::new_in_model("id")],
         tpe: IndexType::Unique,
         defined_on_field: true,
         algorithm: None,
+        clustered: None,
     });
 }
 
@@ -298,7 +301,7 @@ fn id_accepts_length_arg_on_mysql() {
      }
      "#,
         Provider::Mysql,
-        &["extendedIndexes"],
+        &[],
     );
 
     let schema = parse(&dml);
@@ -326,6 +329,7 @@ fn id_accepts_length_arg_on_mysql() {
             },
         ],
         defined_on_field: false,
+        clustered: None,
     });
 
     blog_model.assert_has_pk(PrimaryKeyDefinition {
@@ -337,6 +341,7 @@ fn id_accepts_length_arg_on_mysql() {
             length: Some(5),
         }],
         defined_on_field: true,
+        clustered: None,
     });
 }
 
@@ -357,7 +362,7 @@ fn id_accepts_sort_arg_on_sqlserver() {
      }
      "#,
         Provider::SqlServer,
-        &["extendedIndexes"],
+        &[],
     );
 
     let schema = parse(&dml);
@@ -385,6 +390,7 @@ fn id_accepts_sort_arg_on_sqlserver() {
             },
         ],
         defined_on_field: false,
+        clustered: None,
     });
 
     blog_model.assert_has_pk(PrimaryKeyDefinition {
@@ -396,6 +402,7 @@ fn id_accepts_sort_arg_on_sqlserver() {
             length: None,
         }],
         defined_on_field: true,
+        clustered: None,
     });
 }
 
@@ -406,7 +413,7 @@ fn mysql_allows_id_length_prefix() {
           id String @id(length: 30) @test.VarChar(255)
         }
     "#};
-    let schema = with_header(dml, Provider::Mysql, &["extendedIndexes"]);
+    let schema = with_header(dml, Provider::Mysql, &[]);
     assert!(datamodel::parse_schema(&schema).is_ok());
 }
 
@@ -421,7 +428,7 @@ fn mysql_allows_compound_id_length_prefix() {
         }
     "#};
 
-    let schema = with_header(dml, Provider::Mysql, &["extendedIndexes"]);
+    let schema = with_header(dml, Provider::Mysql, &[]);
     assert!(datamodel::parse_schema(&schema).is_ok());
 }
 
@@ -433,7 +440,7 @@ fn mssql_allows_id_sort_argument() {
         }
     "#};
 
-    let schema = with_header(dml, Provider::SqlServer, &["extendedIndexes"]);
+    let schema = with_header(dml, Provider::SqlServer, &[]);
     assert!(datamodel::parse_schema(&schema).is_ok());
 }
 
@@ -448,7 +455,7 @@ fn mssql_allows_compound_id_sort_argument() {
         }
     "#};
 
-    let schema = with_header(dml, Provider::SqlServer, &["extendedIndexes"]);
+    let schema = with_header(dml, Provider::SqlServer, &[]);
     assert!(datamodel::parse_schema(&schema).is_ok());
 }
 
@@ -463,6 +470,6 @@ fn mongodb_compound_unique_can_have_id_as_part_of_it() {
         }
     "#};
 
-    let schema = with_header(dml, Provider::Mongo, &["mongoDb"]);
+    let schema = with_header(dml, Provider::Mongo, &[]);
     assert!(datamodel::parse_schema(&schema).is_ok());
 }

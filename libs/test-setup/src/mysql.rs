@@ -31,7 +31,10 @@ pub(crate) fn get_mysql_tags(database_url: &str) -> Result<BitFlags<Tags>, Strin
             .first()
             .ok_or_else(|| "Got an empty result set when fetching metadata".to_owned())?;
 
-        if let Some(1) = first_row.get("lower_cases_table_names").and_then(|lctn| lctn.as_i64()) {
+        if let Some(1) = first_row
+            .get("lower_cases_table_names")
+            .and_then(|lctn| lctn.as_integer())
+        {
             tags |= Tags::LowerCasesTableNames;
         }
 
@@ -40,24 +43,26 @@ pub(crate) fn get_mysql_tags(database_url: &str) -> Result<BitFlags<Tags>, Strin
             Some(version) => {
                 eprintln!("Version: {:?}", version);
 
-                if version.contains("5.6") {
-                    tags |= Tags::Mysql56
-                }
-
-                if version.contains("5.7") {
-                    tags |= Tags::Mysql57
-                }
-
-                if version.contains("8.") {
-                    tags |= Tags::Mysql8
-                }
+                // order matters...
 
                 if version.contains("MariaDB") {
                     tags |= Tags::Mariadb
-                }
+                } else {
+                    if version.contains("vitess") {
+                        tags |= Tags::Vitess;
+                    }
 
-                if version.contains("vitess") {
-                    tags |= Tags::Vitess;
+                    if version.contains("5.6") {
+                        tags |= Tags::Mysql56
+                    }
+
+                    if version.contains("5.7") {
+                        tags |= Tags::Mysql57
+                    }
+
+                    if version.contains("8.") {
+                        tags |= Tags::Mysql8
+                    }
                 }
 
                 eprintln!("Inferred tags: {:?}", tags);

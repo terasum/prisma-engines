@@ -1,5 +1,5 @@
 use crate::{
-    ast,
+    ast::{self, WithName},
     interner::StringId,
     {context::Context, types::RelationField},
 };
@@ -95,6 +95,7 @@ impl Relations {
 
     /// Iterator over relations where the provided model is model A, or the forward side of the
     /// relation.
+    #[allow(clippy::wrong_self_convention)] // this is the name we want
     pub(crate) fn from_model(&self, model_a_id: ast::ModelId) -> impl Iterator<Item = RelationId> + '_ {
         self.forward
             .range((model_a_id, ast::ModelId::ZERO, RelationId::MIN)..(model_a_id, ast::ModelId::MAX, RelationId::MAX))
@@ -257,7 +258,7 @@ pub(super) fn ingest_relation<'db>(evidence: RelationEvidence<'db>, relations: &
             // We will meet the relation twice when we walk over all relation
             // fields, so we only instantiate it when the relation field is that
             // of model A, and the opposite is model B.
-            if evidence.ast_model.name.name > evidence.opposite_model.name.name {
+            if evidence.ast_model.name() > evidence.opposite_model.name() {
                 return;
             }
 
@@ -289,8 +290,8 @@ pub(super) fn ingest_relation<'db>(evidence: RelationEvidence<'db>, relations: &
             // This is a 1:1 relation that is required on both sides. We are going to reject this later,
             // so which model is model A doesn't matter.
 
-            if [evidence.ast_model.name.name.as_str(), evidence.ast_field.name()]
-                > [evidence.opposite_model.name.name.as_str(), opp_field.name()]
+            if [evidence.ast_model.name(), evidence.ast_field.name()]
+                > [evidence.opposite_model.name(), opp_field.name()]
             {
                 return;
             }
@@ -311,8 +312,8 @@ pub(super) fn ingest_relation<'db>(evidence: RelationEvidence<'db>, relations: &
             } else if opp_field_attributes.fields.is_none() {
                 // No fields defined, we have to break the tie: take the first model name / field name (self relations)
                 // in lexicographic order.
-                if [evidence.ast_model.name.name.as_str(), evidence.ast_field.name()]
-                    > [evidence.opposite_model.name.name.as_str(), opp_field.name()]
+                if [evidence.ast_model.name(), evidence.ast_field.name()]
+                    > [evidence.opposite_model.name(), opp_field.name()]
                 {
                     return;
                 }
@@ -350,7 +351,8 @@ pub(super) fn ingest_relation<'db>(evidence: RelationEvidence<'db>, relations: &
                             .ast_indexes
                             .iter()
                             .any(|(_, idx)| {
-                                idx.is_unique() && &idx.fields.iter().map(|f| f.field_id).collect::<Vec<_>>() == fields
+                                idx.is_unique()
+                                    && &idx.fields.iter().map(|f| f.path.field_in_index()).collect::<Vec<_>>() == fields
                             });
                     if fields_are_unique {
                         RelationAttributes::OneToOne(OneToOneRelationFields::Forward(evidence.field_id))
@@ -393,15 +395,22 @@ pub(super) fn ingest_relation<'db>(evidence: RelationEvidence<'db>, relations: &
         .insert((evidence.relation_field.referenced_model, evidence.model_id, relation_id));
 }
 
-/// Describes what happens when related nodes are deleted.
+/// An action describing the way referential integrity is managed in the system.
+///
+/// An action is triggered when a relation constraint gets violated in a way
+/// that would make the the data inconsistent, e.g. deleting or updating a
+/// referencing record that leaves related records into a wrong state.
+///
+/// ```ignore
+/// @relation(fields: [a], references: [b], onDelete: NoAction, onUpdate: Cascade)
+///                                                   ^^^^^^^^            ^^^^^^^
+/// ```
 #[repr(u8)]
 #[bitflags]
 #[derive(Debug, Copy, PartialEq, Clone)]
 pub enum ReferentialAction {
     /// Deletes record if dependent record is deleted. Updates relation scalar
     /// fields if referenced scalar fields of the dependent record are updated.
-    /// Prevents operation (both updates and deletes) from succeeding if any
-    /// records are connected.
     Cascade,
     /// Prevents operation (both updates and deletes) from succeeding if any
     /// records are connected. This behavior will always result in a runtime

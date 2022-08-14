@@ -1,3 +1,4 @@
+mod indices;
 mod name;
 
 pub(crate) use name::Name;
@@ -5,13 +6,12 @@ pub(crate) use name::Name;
 use super::{field_type::FieldType, CompositeTypeDepth};
 use convert_case::{Case, Casing};
 use datamodel::dml::{
-    self, CompositeType, CompositeTypeField, CompositeTypeFieldType, Datamodel, DefaultValue, Field, FieldArity,
-    IndexDefinition, IndexField, IndexType, Model, PrimaryKeyDefinition, PrimaryKeyField, ScalarField, ScalarType,
-    SortOrder, ValueGenerator, WithDatabaseName,
+    self, CompositeType, CompositeTypeField, CompositeTypeFieldType, Datamodel, DefaultValue, Field, FieldArity, Model,
+    PrimaryKeyDefinition, PrimaryKeyField, ScalarField, ScalarType, ValueGenerator, WithDatabaseName,
 };
 use introspection_connector::Warning;
 use mongodb::bson::{Bson, Document};
-use mongodb_schema_describer::{IndexFieldProperty, IndexWalker};
+use mongodb_schema_describer::IndexWalker;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::{
@@ -69,9 +69,9 @@ impl<'a> Statistics<'a> {
     pub(super) fn into_datamodel(self, warnings: &mut Vec<Warning>) -> Datamodel {
         let mut data_model = Datamodel::new();
         let mut indices = self.indices;
-        let (mut models, types) = populate_fields(&self.models, self.samples, warnings);
+        let (mut models, mut types) = populate_fields(&self.models, self.samples, warnings);
 
-        add_indices_to_models(&mut models, &mut indices, warnings);
+        indices::add_to_models(&mut models, &mut types, &mut indices, warnings);
         add_missing_ids_to_models(&mut models);
 
         for (_, model) in models.into_iter() {
@@ -105,7 +105,12 @@ impl<'a> Statistics<'a> {
     /// - if model is foo and field is bar, the type is FooBar
     /// - if a model already exists with the name, we'll use FooBar_
     fn composite_type_name(&self, model: &str, field: &str) -> Name {
-        let name = Name::Model(format!("{}_{}", model, field).to_case(Case::Pascal));
+        let combined: String = format!("{}_{}", model, field)
+            .chars()
+            .filter(|c| c.is_ascii())
+            .collect();
+
+        let name = Name::Model(combined.to_case(Case::Pascal));
 
         let name = if self.models.contains_key(&name) {
             format!("{}_", name)
@@ -321,6 +326,7 @@ fn new_model(model_name: &str) -> Model {
             length: None,
         }],
         defined_on_field: true,
+        clustered: None,
     };
 
     let (name, database_name, documentation) = match sanitize_string(model_name) {
@@ -545,7 +551,7 @@ fn filter_out_empty_types(
             match &field.field_type {
                 dml::FieldType::CompositeType(ct) if empty_types.contains(ct) => {
                     fields_with_an_empty_type.push((Name::Model(model_name.clone()), field.name.clone()));
-                    field.field_type = dml::FieldType::Scalar(ScalarType::Json, None, None);
+                    field.field_type = dml::FieldType::Scalar(ScalarType::Json, None);
                     field.documentation = Some(EMPTY_TYPE_DETECTED.to_owned());
                 }
                 _ => (),
@@ -559,7 +565,7 @@ fn filter_out_empty_types(
             match &field.r#type {
                 CompositeTypeFieldType::CompositeType(name) if empty_types.contains(name) => {
                     fields_with_an_empty_type.push((Name::CompositeType(type_name.clone()), field.name.clone()));
-                    field.r#type = CompositeTypeFieldType::Scalar(ScalarType::Json, None, None);
+                    field.r#type = CompositeTypeFieldType::Scalar(ScalarType::Json, None);
                     field.documentation = Some(EMPTY_TYPE_DETECTED.to_owned());
                 }
                 _ => (),
@@ -572,88 +578,6 @@ fn filter_out_empty_types(
         warnings.push(crate::warnings::fields_pointing_to_an_empty_type(
             &fields_with_an_empty_type,
         ));
-    }
-}
-
-fn add_indices_to_models(
-    models: &mut BTreeMap<String, Model>,
-    indices: &mut BTreeMap<String, Vec<IndexWalker<'_>>>,
-    warnings: &mut Vec<Warning>,
-) {
-    let mut fields_with_unknown_type = Vec::new();
-
-    for (model_name, model) in models.iter_mut() {
-        for index in indices.remove(model_name).into_iter().flat_map(|i| i.into_iter()) {
-            let defined_on_field = index.fields().len() == 1;
-
-            let missing_fields: Vec<_> = index
-                .fields()
-                .filter(|indf| {
-                    !model
-                        .fields
-                        .iter()
-                        .any(|mf| mf.name() == indf.name() || mf.database_name() == Some(indf.name()))
-                })
-                .cloned()
-                .collect();
-
-            for field in missing_fields {
-                let docs = String::from("Field referred in an index, but found no data to define the type.");
-                fields_with_unknown_type.push((Name::Model(model_name.to_owned()), field.name.clone()));
-
-                let (name, database_name) = match sanitize_string(field.name()) {
-                    Some(name) => (name, Some(field.name)),
-                    None => (field.name, None),
-                };
-
-                let sf = ScalarField {
-                    name,
-                    field_type: FieldType::Json.into(),
-                    arity: FieldArity::Optional,
-                    database_name,
-                    default_value: None,
-                    documentation: Some(docs),
-                    is_generated: false,
-                    is_updated_at: false,
-                    is_commented_out: false,
-                    is_ignored: false,
-                };
-
-                model.fields.push(Field::ScalarField(sf));
-            }
-
-            let fields = index
-                .fields()
-                .map(|f| IndexField {
-                    name: sanitize_string(f.name()).unwrap_or_else(|| f.name().to_string()),
-                    sort_order: match f.property {
-                        IndexFieldProperty::Text => None,
-                        IndexFieldProperty::Ascending => Some(SortOrder::Asc),
-                        IndexFieldProperty::Descending => Some(SortOrder::Desc),
-                    },
-                    length: None,
-                })
-                .collect();
-
-            let tpe = match index.r#type() {
-                mongodb_schema_describer::IndexType::Normal => IndexType::Normal,
-                mongodb_schema_describer::IndexType::Unique => IndexType::Unique,
-                mongodb_schema_describer::IndexType::Fulltext => IndexType::Fulltext,
-            };
-
-            model.add_index(IndexDefinition {
-                fields,
-                tpe,
-                defined_on_field,
-                db_name: Some(index.name().to_string()),
-                name: None,
-                algorithm: None,
-            });
-        }
-    }
-
-    if !fields_with_unknown_type.is_empty() {
-        warnings.push(crate::warnings::fields_with_unknown_types(&fields_with_unknown_type));
     }
 }
 

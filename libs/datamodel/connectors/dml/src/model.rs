@@ -3,7 +3,7 @@ use crate::field::{Field, FieldType, RelationField, ScalarField};
 use crate::scalars::ScalarType;
 use crate::traits::{Ignorable, WithDatabaseName, WithName};
 use indoc::formatdoc;
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 /// Represents a model in a prisma schema.
 #[derive(Debug, PartialEq, Clone, Default)]
@@ -32,11 +32,28 @@ pub struct Model {
 pub enum IndexAlgorithm {
     BTree,
     Hash,
+    Gist,
+    Gin,
+    SpGist,
+    Brin,
 }
 
 impl Default for IndexAlgorithm {
     fn default() -> Self {
         Self::BTree
+    }
+}
+
+impl fmt::Display for IndexAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IndexAlgorithm::BTree => f.write_str("BTree"),
+            IndexAlgorithm::Hash => f.write_str("Hash"),
+            IndexAlgorithm::Gist => f.write_str("Gist"),
+            IndexAlgorithm::Gin => f.write_str("Gin"),
+            IndexAlgorithm::SpGist => f.write_str("SpGist"),
+            IndexAlgorithm::Brin => f.write_str("Brin"),
+        }
     }
 }
 
@@ -47,6 +64,7 @@ pub struct IndexDefinition {
     pub db_name: Option<String>,
     pub fields: Vec<IndexField>,
     pub tpe: IndexType,
+    pub clustered: Option<bool>,
     pub algorithm: Option<IndexAlgorithm>,
     pub defined_on_field: bool,
 }
@@ -61,21 +79,185 @@ impl IndexDefinition {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum OperatorClass {
+    // GiST
+    InetOps,
+
+    // GIN
+    JsonbOps,
+    JsonbPathOps,
+    ArrayOps,
+
+    // SP-GiST
+    TextOps,
+
+    // BRIN
+    BitMinMaxOps,
+    VarBitMinMaxOps,
+    BpcharBloomOps,
+    BpcharMinMaxOps,
+    ByteaBloomOps,
+    ByteaMinMaxOps,
+    DateBloomOps,
+    DateMinMaxOps,
+    DateMinMaxMultiOps,
+    Float4BloomOps,
+    Float4MinMaxOps,
+    Float4MinMaxMultiOps,
+    Float8BloomOps,
+    Float8MinMaxOps,
+    Float8MinMaxMultiOps,
+    InetInclusionOps,
+    InetBloomOps,
+    InetMinMaxOps,
+    InetMinMaxMultiOps,
+    Int2BloomOps,
+    Int2MinMaxOps,
+    Int2MinMaxMultiOps,
+    Int4BloomOps,
+    Int4MinMaxOps,
+    Int4MinMaxMultiOps,
+    Int8BloomOps,
+    Int8MinMaxOps,
+    Int8MinMaxMultiOps,
+    NumericBloomOps,
+    NumericMinMaxOps,
+    NumericMinMaxMultiOps,
+    OidBloomOps,
+    OidMinMaxOps,
+    OidMinMaxMultiOps,
+    TextBloomOps,
+    TextMinMaxOps,
+    TimestampBloomOps,
+    TimestampMinMaxOps,
+    TimestampMinMaxMultiOps,
+    TimestampTzBloomOps,
+    TimestampTzMinMaxOps,
+    TimestampTzMinMaxMultiOps,
+    TimeBloomOps,
+    TimeMinMaxOps,
+    TimeMinMaxMultiOps,
+    TimeTzBloomOps,
+    TimeTzMinMaxOps,
+    TimeTzMinMaxMultiOps,
+    UuidBloomOps,
+    UuidMinMaxOps,
+    UuidMinMaxMultiOps,
+
+    Raw(Cow<'static, str>),
+}
+
+impl fmt::Display for OperatorClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InetOps => f.write_str("InetOps"),
+            Self::JsonbOps => f.write_str("JsonbOps"),
+            Self::JsonbPathOps => f.write_str("JsonbPathOps"),
+            Self::ArrayOps => f.write_str("ArrayOps"),
+            Self::TextOps => f.write_str("TextOps"),
+            Self::BitMinMaxOps => f.write_str("BitMinMaxOps"),
+            Self::VarBitMinMaxOps => f.write_str("VarBitMinMaxOps"),
+            Self::BpcharBloomOps => f.write_str("BpcharBloomOps"),
+            Self::BpcharMinMaxOps => f.write_str("BpcharMinMaxOps"),
+            Self::ByteaBloomOps => f.write_str("ByteaBloomOps"),
+            Self::ByteaMinMaxOps => f.write_str("ByteaMinMaxOps"),
+            Self::DateBloomOps => f.write_str("DateBloomOps"),
+            Self::DateMinMaxOps => f.write_str("DateMinMaxOps"),
+            Self::DateMinMaxMultiOps => f.write_str("DateMinMaxMultiOps"),
+            Self::Float4BloomOps => f.write_str("Float4BloomOps"),
+            Self::Float4MinMaxOps => f.write_str("Float4MinMaxOps"),
+            Self::Float4MinMaxMultiOps => f.write_str("Float4MinMaxMultiOps"),
+            Self::Float8BloomOps => f.write_str("Float8BloomOps"),
+            Self::Float8MinMaxOps => f.write_str("Float8MinMaxOps"),
+            Self::Float8MinMaxMultiOps => f.write_str("Float8MinMaxMultiOps"),
+            Self::InetInclusionOps => f.write_str("InetInclusionOps"),
+            Self::InetBloomOps => f.write_str("InetBloomOps"),
+            Self::InetMinMaxOps => f.write_str("InetMinMaxOps"),
+            Self::InetMinMaxMultiOps => f.write_str("InetMinMaxMultiOps"),
+            Self::Int2BloomOps => f.write_str("Int2BloomOps"),
+            Self::Int2MinMaxOps => f.write_str("Int2MinMaxOps"),
+            Self::Int2MinMaxMultiOps => f.write_str("Int2MinMaxMultiOps"),
+            Self::Int4BloomOps => f.write_str("Int4BloomOps"),
+            Self::Int4MinMaxOps => f.write_str("Int4MinMaxOps"),
+            Self::Int4MinMaxMultiOps => f.write_str("Int4MinMaxMultiOps"),
+            Self::Int8BloomOps => f.write_str("Int8BloomOps"),
+            Self::Int8MinMaxOps => f.write_str("Int8MinMaxOps"),
+            Self::Int8MinMaxMultiOps => f.write_str("Int8MinMaxMultiOps"),
+            Self::NumericBloomOps => f.write_str("NumericBloomOps"),
+            Self::NumericMinMaxOps => f.write_str("NumericMinMaxOps"),
+            Self::NumericMinMaxMultiOps => f.write_str("NumericMinMaxMultiOps"),
+            Self::OidBloomOps => f.write_str("OidBloomOps"),
+            Self::OidMinMaxOps => f.write_str("OidMinMaxOps"),
+            Self::OidMinMaxMultiOps => f.write_str("OidMinMaxMultiOps"),
+            Self::TextBloomOps => f.write_str("TextBloomOps"),
+            Self::TextMinMaxOps => f.write_str("TextMinMaxOps"),
+            Self::TimestampBloomOps => f.write_str("TimestampBloomOps"),
+            Self::TimestampMinMaxOps => f.write_str("TimestampMinMaxOps"),
+            Self::TimestampMinMaxMultiOps => f.write_str("TimestampMinMaxMultiOps"),
+            Self::TimestampTzBloomOps => f.write_str("TimestampTzBloomOps"),
+            Self::TimestampTzMinMaxOps => f.write_str("TimestampTzMinMaxOps"),
+            Self::TimestampTzMinMaxMultiOps => f.write_str("TimestampTzMinMaxMultiOps"),
+            Self::TimeBloomOps => f.write_str("TimeBloomOps"),
+            Self::TimeMinMaxOps => f.write_str("TimeMinMaxOps"),
+            Self::TimeMinMaxMultiOps => f.write_str("TimeMinMaxMultiOps"),
+            Self::TimeTzBloomOps => f.write_str("TimeTzBloomOps"),
+            Self::TimeTzMinMaxOps => f.write_str("TimeTzMinMaxOps"),
+            Self::TimeTzMinMaxMultiOps => f.write_str("TimeTzMinMaxMultiOps"),
+            Self::UuidBloomOps => f.write_str("UuidBloomOps"),
+            Self::UuidMinMaxOps => f.write_str("UuidMinMaxOps"),
+            Self::UuidMinMaxMultiOps => f.write_str("UuidMinMaxOps"),
+            Self::Raw(s) => f.write_str(s),
+        }
+    }
+}
+
+impl OperatorClass {
+    pub fn raw(op: impl Into<Cow<'static, str>>) -> Self {
+        Self::Raw(op.into())
+    }
+
+    pub fn as_raw(&self) -> Option<&str> {
+        match self {
+            Self::Raw(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn is_raw(&self) -> bool {
+        matches!(self, Self::Raw(_))
+    }
+}
+
 ///A field in an index that optionally defines a sort order and length limit.
 #[derive(Debug, PartialEq, Clone)]
 pub struct IndexField {
-    pub name: String,
+    pub path: Vec<(String, Option<String>)>,
     pub sort_order: Option<SortOrder>,
     pub length: Option<u32>,
+    pub operator_class: Option<OperatorClass>,
 }
 
 impl IndexField {
     /// Tests only
-    pub fn new(name: &str) -> Self {
+    pub fn new_in_model(name: &str) -> Self {
         IndexField {
-            name: name.to_string(),
+            path: vec![(name.into(), None)],
             sort_order: None,
             length: None,
+            operator_class: None,
+        }
+    }
+
+    pub fn new_in_path(path: &[(&str, Option<&str>)]) -> Self {
+        IndexField {
+            path: path
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.map(|v| v.to_string())))
+                .collect(),
+            sort_order: None,
+            length: None,
+            operator_class: None,
         }
     }
 }
@@ -87,6 +269,7 @@ pub struct PrimaryKeyDefinition {
     pub db_name: Option<String>,
     pub fields: Vec<PrimaryKeyField>,
     pub defined_on_field: bool,
+    pub clustered: Option<bool>,
 }
 
 ///A field in a Primary Key that optionally defines a sort order and length limit.
@@ -108,24 +291,6 @@ impl PrimaryKeyField {
     }
 }
 
-impl fmt::Display for PrimaryKeyField {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name)?;
-        if self.sort_order.is_some() || self.length.is_some() {
-            write!(f, "(")?;
-            if let Some(length) = self.length {
-                write!(f, "{}", length)?;
-            }
-            if let Some(sort) = self.sort_order {
-                write!(f, "{}", sort)?;
-            }
-            write!(f, ")")?;
-        }
-
-        Ok(())
-    }
-}
-
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum IndexType {
     Unique,
@@ -143,15 +308,6 @@ impl IndexType {
 pub enum SortOrder {
     Asc,
     Desc,
-}
-
-impl fmt::Display for SortOrder {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            SortOrder::Asc => write!(f, "sort: Asc"),
-            SortOrder::Desc => write!(f, "sort: Desc"),
-        }
-    }
 }
 
 /// A unique criteria is a set of fields through which a record can be uniquely identified.
@@ -332,7 +488,7 @@ impl Model {
                                 can discuss about fixing this. -- Your friendly prisma developers.
                             "#,
                                 self.name,
-                                f
+                                f.name
                             );
 
                             panic!("{}", error.replace('\n', " "));
@@ -360,7 +516,10 @@ impl Model {
                     let fields: Vec<_> = id
                         .fields
                         .iter()
-                        .map(|f| self.find_scalar_field(&f.name).unwrap())
+                        // TODO: remove this when supporting composite indices on QE
+                        .filter(|f| f.path.len() == 1)
+                        .map(|f| &f.path.first().unwrap().0)
+                        .map(|name| self.find_scalar_field(name).unwrap())
                         .collect();
                     let no_fields_are_ineligible = !fields.iter().any(|f| in_eligible(f));
                     let all_fields_are_required = fields.iter().all(|f| f.is_required());
@@ -377,19 +536,24 @@ impl Model {
         result
     }
 
-    pub fn field_is_indexed(&self, field_name: &str) -> bool {
-        let field = self.find_field(field_name).unwrap();
+    pub fn field_is_indexed(&self, name: &str) -> bool {
+        let field = self.find_field(name).unwrap();
 
         if self.field_is_primary(field.name()) || self.field_is_unique(field.name()) {
             return true;
         }
 
-        let is_first_in_index = self
-            .indices
-            .iter()
-            .any(|index| index.fields.first().unwrap().name == field_name);
+        let is_first_in_index = self.indices.iter().any(|index| {
+            index
+                .fields
+                .iter()
+                .flat_map(|f| &f.path)
+                .last()
+                .map(|(field_name, _)| field_name == name)
+                .unwrap_or(false)
+        });
 
-        let is_first_in_primary_key = matches!(&self.primary_key, Some(PrimaryKeyDefinition{ fields, ..}) if fields.first().unwrap().name == field_name);
+        let is_first_in_primary_key = matches!(&self.primary_key, Some(PrimaryKeyDefinition{ fields, ..}) if fields.first().unwrap().name == name);
 
         is_first_in_index || is_first_in_primary_key
     }
@@ -419,14 +583,30 @@ impl Model {
     }
 
     pub fn field_is_unique(&self, name: &str) -> bool {
-        self.indices
-            .iter()
-            .any(|i| i.is_unique() && i.fields.len() == 1 && i.fields.first().unwrap().name == name)
+        self.indices.iter().any(|i| {
+            let names_match = i
+                .fields
+                .iter()
+                .flat_map(|f| &f.path)
+                .last()
+                .map(|(field_name, _)| field_name == name)
+                .unwrap_or(false);
+
+            i.is_unique() && i.fields.len() == 1 && names_match
+        })
     }
 
     pub fn field_is_unique_and_defined_on_field(&self, name: &str) -> bool {
         self.indices.iter().any(|i| {
-            i.is_unique() && i.fields.len() == 1 && i.fields.first().unwrap().name == name && i.defined_on_field
+            let names_match = i
+                .fields
+                .iter()
+                .flat_map(|f| &f.path)
+                .last()
+                .map(|(field_name, _)| field_name == name)
+                .unwrap_or(false);
+
+            i.is_unique() && i.fields.len() == 1 && names_match && i.defined_on_field
         })
     }
 
@@ -441,7 +621,7 @@ impl Model {
     pub fn field_is_auto_generated_int_id(&self, name: &str) -> bool {
         let field = self.find_scalar_field(name).unwrap();
         let is_autogenerated_id = matches!(field.default_value.as_ref().map(|val| val.kind()), Some(DefaultKind::Expression(_)) if self.field_is_primary(name));
-        let is_an_int = matches!(field.field_type, FieldType::Scalar(ScalarType::Int, _, _));
+        let is_an_int = matches!(field.field_type, FieldType::Scalar(ScalarType::Int, _));
 
         is_autogenerated_id && is_an_int
     }

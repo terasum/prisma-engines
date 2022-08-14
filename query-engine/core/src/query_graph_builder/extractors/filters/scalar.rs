@@ -1,12 +1,9 @@
-use crate::{
-    constants::{aggregations, filters, json_null},
-    ParsedInputMap, ParsedInputValue, QueryGraphBuilderError, QueryGraphBuilderResult,
-};
+use crate::{ParsedInputMap, ParsedInputValue, QueryGraphBuilderError, QueryGraphBuilderResult};
 use connector::{Filter, JsonCompare, JsonFilterPath, JsonTargetType, ScalarCompare, ScalarListCompare};
 use prisma_models::{PrismaValue, ScalarFieldRef, TypeIdentifier};
+use schema_builder::constants::{aggregations, filters, json_null};
 use std::convert::TryInto;
 
-#[tracing::instrument(name = "parse_scalar_field", skip(input_map, reverse))]
 pub fn parse(
     mut input_map: ParsedInputMap,
     field: &ScalarFieldRef,

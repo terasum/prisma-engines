@@ -5,6 +5,15 @@ use chrono::DateTime;
 #[test]
 fn should_set_default_for_all_scalar_types() {
     let dml = r#"
+    datasource test {
+        provider = "postgresql"
+        url = "postgresql://"
+    }
+
+    generator js {
+        provider = "prisma-client-js"
+    }
+
     model Model {
         id Int @id
         int Int @default(3)
@@ -199,11 +208,6 @@ fn mongodb_auto_id() {
           url = env("DATABASE_URL")
         }
 
-        generator client {
-          provider = "prisma-client-js"
-          previewFeatures = ["mongoDb"]
-        }
-
         model a {
           id String @id @default(auto()) @db.ObjectId @map("_id")
         }
@@ -215,4 +219,82 @@ fn mongodb_auto_id() {
         .assert_has_model("a")
         .assert_has_scalar_field("id")
         .assert_default_value(DefaultValue::new_expression(ValueGenerator::new_auto()));
+}
+
+#[test]
+fn scalar_list_defaults_with_decimal() {
+    let dml = indoc! {r#"
+        datasource db {
+          provider = "postgresql"
+          url = "postgres://"
+        }
+
+        enum Color {
+            RED
+            GREEN
+            BLUE
+        }
+
+        model Model {
+            id Int @id
+            int_empty Int[] @default([])
+            int Int[] @default([0, 1, 1, 2, 3, 5, 8, 13, 21])
+            float Float[] @default([3.20, 4.20, 3.14, 0, 9.9999999, 1000.7])
+            string String[] @default(["Arrabbiata", "Carbonara", "Al Ragù"])
+            boolean Boolean[] @default([false, true ,true, true])
+            dateTime DateTime[] @default(["2019-06-17T14:20:57Z", "2020-09-21T20:00:00+02:00"])
+            colors Color[] @default([GREEN, BLUE])
+            colors_empty Color[] @default([])
+            bytes    Bytes[] @default(["aGVsbG8gd29ybGQ="])
+            json     Json[]  @default(["{ \"a\": [\"b\"] }", "3"])
+            decimal  Decimal[]  @default(["121.10299000124800000001", "0.4", "1.1", "-68.0"])
+        }
+    "#};
+
+    assert_valid(dml);
+}
+
+#[test]
+fn scalar_list_defaults_with_composite_types() {
+    let dml = indoc! {r#"
+        datasource db {
+          provider = "mongodb"
+          url = "mongodb://"
+        }
+
+        enum Color {
+            RED
+            GREEN
+            BLUE
+        }
+
+        model Model {
+            id Int @id @map("_id")
+            int_empty Int[] @default([])
+            int Int[] @default([0, 1, 1, 2, 3, 5, 8, 13, 21])
+            float Float[] @default([3.20, 4.20, 3.14, 0, 9.9999999, 1000.7])
+            string String[] @default(["Arrabbiata", "Carbonara", "Al Ragù"])
+            boolean Boolean[] @default([false, true ,true, true])
+            dateTime DateTime[] @default(["2019-06-17T14:20:57Z", "2020-09-21T20:00:00+02:00"])
+            colors Color[] @default([GREEN, BLUE])
+            colors_empty Color[] @default([])
+            bytes    Bytes[] @default(["aGVsbG8gd29ybGQ="])
+            json     Json[]  @default(["{ \"a\": [\"b\"] }", "3"])
+        }
+
+        type CompositeT {
+            int_empty Int[] @default([])
+            int Int[] @default([0, 1, 1, 2, 3, 5, 8, 13, 21])
+            float Float[] @default([3.20, 4.20, 3.14, 0, 9.9999999, 1000.7])
+            string String[] @default(["Arrabbiata", "Carbonara", "Al Ragù"])
+            boolean Boolean[] @default([false, true ,true, true])
+            dateTime DateTime[] @default(["2019-06-17T14:20:57Z", "2020-09-21T20:00:00+02:00"])
+            bytes    Bytes[] @default(["aGVsbG8gd29ybGQ="])
+            colors Color[] @default([GREEN, BLUE])
+            colors_empty Color[] @default([])
+            json     Json[]  @default(["{ \"a\": [\"b\"] }", "3"])
+        }
+    "#};
+
+    assert_valid(dml);
 }

@@ -34,7 +34,7 @@ impl CompositeType {
     pub fn scalar_fields(&self) -> impl Iterator<Item = &CompositeTypeField> {
         self.fields
             .iter()
-            .filter(|f| matches!(f.r#type, CompositeTypeFieldType::Scalar(_, _, _)))
+            .filter(|f| matches!(f.r#type, CompositeTypeFieldType::Scalar(_, _)))
     }
 
     /// Gets an iterator over all enum fields.
@@ -57,13 +57,17 @@ impl CompositeType {
             .iter()
             .filter(|f| matches!(f.r#type, CompositeTypeFieldType::Unsupported(_)))
     }
+
+    /// Finds a field by name.
+    pub fn find_field(&self, name: &str) -> Option<&CompositeTypeField> {
+        self.fields.iter().find(|f| f.name == name)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompositeTypeFieldType {
     CompositeType(String),
-    /// The first option is Some(x) if the scalar type is based upon a type alias.
-    Scalar(ScalarType, Option<String>, Option<NativeTypeInstance>),
+    Scalar(ScalarType, Option<NativeTypeInstance>),
     /// This is an enum field, with an enum of the given name.
     Enum(String),
     /// This is a field with an unsupported datatype. The content is the db's description of the type, it should enable migrate to create the type.
@@ -79,16 +83,16 @@ impl CompositeTypeFieldType {
         }
     }
 
-    pub fn as_scalar(&self) -> Option<(&ScalarType, &Option<String>, &Option<NativeTypeInstance>)> {
-        if let Self::Scalar(typ, alias, native_type) = self {
-            Some((typ, alias, native_type))
+    pub fn as_scalar(&self) -> Option<(&ScalarType, &Option<NativeTypeInstance>)> {
+        if let Self::Scalar(typ, native_type) = self {
+            Some((typ, native_type))
         } else {
             None
         }
     }
 
     pub fn as_native_type(&self) -> Option<(&ScalarType, &NativeTypeInstance)> {
-        if let Self::Scalar(typ, _, Some(native_type)) = self {
+        if let Self::Scalar(typ, Some(native_type)) = self {
             Some((typ, native_type))
         } else {
             None

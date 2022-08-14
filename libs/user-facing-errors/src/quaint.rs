@@ -38,20 +38,13 @@ pub fn invalid_connection_string_description(error_details: &str) -> String {
 
 pub fn render_quaint_error(kind: &ErrorKind, connection_info: &ConnectionInfo) -> Option<KnownError> {
     match (kind, connection_info) {
-        (ErrorKind::DatabaseDoesNotExist { .. }, ConnectionInfo::Sqlite { file_path, .. }) => {
-            Some(KnownError::new(common::DatabaseDoesNotExist::Sqlite {
-                database_file_path: file_path.clone(),
-                database_file_name: std::path::Path::new(file_path)
-                    .file_name()
-                    .map(|osstr| osstr.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| file_path.clone()),
-            }))
+        (ErrorKind::DatabaseDoesNotExist { .. }, ConnectionInfo::Sqlite { .. }) => {
+            unreachable!(); // quaint implicitly creates sqlite databases
         }
 
-        (ErrorKind::DatabaseDoesNotExist { .. }, ConnectionInfo::Postgres(url)) => {
+        (ErrorKind::DatabaseDoesNotExist { db_name }, ConnectionInfo::Postgres(url)) => {
             Some(KnownError::new(common::DatabaseDoesNotExist::Postgres {
-                database_name: url.dbname().to_owned(),
-                database_schema_name: url.schema().to_owned(),
+                database_name: db_name.to_string(),
                 database_host: url.host().to_owned(),
                 database_port: url.port(),
             }))

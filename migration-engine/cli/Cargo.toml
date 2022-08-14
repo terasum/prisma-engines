@@ -1,7 +1,6 @@
 [package]
 name = "migration-engine-cli"
 version = "0.1.0"
-authors = ["Tom Houlé <tom@tomhoule.com>"]
 edition = "2021"
 
 [dependencies]
@@ -28,7 +27,7 @@ connection-string = "0.1"
 
 [dev-dependencies.quaint]
 git = "https://github.com/prisma/quaint"
-rev = "479e08a41b13902028906bc05f778688c06a3f18"
+rev = "fb4fe90682b4fecb485fd0d6975dd15a3bc9616b"
 
 [[bin]]
 name = "migration-engine"

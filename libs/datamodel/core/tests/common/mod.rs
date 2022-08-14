@@ -5,6 +5,10 @@ pub use indoc::{formatdoc, indoc};
 use datamodel::{diagnostics::*, Configuration, StringFromEnvVar};
 use pretty_assertions::assert_eq;
 
+pub(crate) fn reformat(input: &str) -> String {
+    datamodel::reformat(input, 2).unwrap_or_else(|| input.to_owned())
+}
+
 pub(crate) trait DatasourceAsserts {
     fn assert_name(&self, name: &str) -> &Self;
     fn assert_url(&self, url: StringFromEnvVar) -> &Self;
@@ -82,15 +86,6 @@ pub(crate) trait DatamodelAsserts {
     fn assert_has_enum(&self, t: &str) -> &dml::Enum;
 }
 
-pub(crate) trait ErrorAsserts {
-    fn assert_is(&self, error: DatamodelError) -> &Self;
-    fn assert_are(&self, error: &[DatamodelError]) -> &Self;
-    fn assert_is_message(&self, msg: &str) -> &Self;
-    fn assert_is_at(&self, index: usize, error: DatamodelError) -> &Self;
-    fn assert_length(&self, length: usize) -> &Self;
-    fn assert_is_message_at(&self, index: usize, msg: &str) -> &Self;
-}
-
 pub(crate) trait WarningAsserts {
     fn assert_is(&self, warning: DatamodelWarning) -> &Self;
 }
@@ -126,7 +121,7 @@ impl FieldAsserts for dml::ScalarField {
 
 impl ScalarFieldAsserts for dml::ScalarField {
     fn assert_base_type(&self, t: &ScalarType) -> &Self {
-        if let dml::FieldType::Scalar(base_type, _, None) = &self.field_type {
+        if let dml::FieldType::Scalar(base_type, None) = &self.field_type {
             assert_eq!(base_type, t);
         } else {
             panic!("Scalar expected, but found {:?}", self.field_type);
@@ -153,7 +148,7 @@ impl ScalarFieldAsserts for dml::ScalarField {
     }
 
     fn assert_native_type(&self) -> &NativeTypeInstance {
-        if let dml::FieldType::Scalar(_, _, Some(t)) = &self.field_type {
+        if let dml::FieldType::Scalar(_, Some(t)) = &self.field_type {
             t
         } else {
             panic!("Native Type expected, but found {:?}", self.field_type);
@@ -188,7 +183,7 @@ impl ScalarFieldAsserts for dml::ScalarField {
 
 impl CompositeTypeFieldAsserts for dml::CompositeTypeField {
     fn assert_base_type(&self, t: &ScalarType) -> &Self {
-        if let Some((base_type, _, _)) = self.r#type.as_scalar() {
+        if let Some((base_type, _)) = self.r#type.as_scalar() {
             assert_eq!(base_type, t);
         } else {
             panic!("Scalar expected, but found {:?}", self.r#type);
@@ -302,6 +297,7 @@ impl ModelAsserts for dml::Model {
         self
     }
 
+    #[track_caller]
     fn assert_with_documentation(&self, t: &str) -> &Self {
         assert_eq!(self.documentation, Some(t.to_owned()));
         self
@@ -417,57 +413,6 @@ impl WarningAsserts for Vec<DatamodelWarning> {
     }
 }
 
-impl ErrorAsserts for Diagnostics {
-    fn assert_is(&self, error: DatamodelError) -> &Self {
-        assert_eq!(
-            self.errors().len(),
-            1,
-            "Expected exactly one validation error. Errors are: {:?}",
-            &self
-        );
-        assert_eq!(self.errors()[0], error);
-        self
-    }
-
-    fn assert_are(&self, errors: &[DatamodelError]) -> &Self {
-        assert_eq!(self.errors(), errors);
-        self
-    }
-
-    fn assert_is_message(&self, msg: &str) -> &Self {
-        assert_eq!(
-            self.errors().len(),
-            1,
-            "Expected exactly one validation error. Errors are: {:?}",
-            &self
-        );
-        assert_eq!(self.errors()[0].description(), msg);
-        self
-    }
-
-    fn assert_is_at(&self, index: usize, error: DatamodelError) -> &Self {
-        assert_eq!(self.errors()[index], error);
-        self
-    }
-
-    fn assert_length(&self, length: usize) -> &Self {
-        assert_eq!(
-            self.errors().len(),
-            length,
-            "Expected exactly {} validation errors, but got {}. The errors were {:?}",
-            length,
-            self.errors().len(),
-            &self.errors(),
-        );
-        self
-    }
-
-    fn assert_is_message_at(&self, index: usize, msg: &str) -> &Self {
-        assert_eq!(self.errors()[index].description(), msg);
-        self
-    }
-}
-
 pub(crate) fn parse(datamodel_string: &str) -> Datamodel {
     match datamodel::parse_datamodel(datamodel_string) {
         Ok(s) => s.subject,
@@ -492,19 +437,26 @@ pub(crate) fn parse_configuration(datamodel_string: &str) -> Configuration {
     }
 }
 
+#[track_caller]
 pub(crate) fn expect_error(schema: &str, expectation: &expect_test::Expect) {
-    let err = parse_and_render_error(schema);
-    expectation.assert_eq(&err)
+    match datamodel::parse_schema(schema) {
+        Ok(_) => panic!("Expected a validation error, but the schema is valid."),
+        Err(err) => expectation.assert_eq(&err),
+    }
 }
 
 pub(crate) fn parse_and_render_error(schema: &str) -> String {
-    parse_error(schema).to_pretty_string("schema.prisma", schema)
+    match datamodel::parse_datamodel(schema) {
+        Ok(_) => panic!("Expected an error when parsing schema."),
+        Err(errs) => errs.to_pretty_string("schema.prisma", schema),
+    }
 }
 
-pub(crate) fn parse_error(datamodel_string: &str) -> Diagnostics {
-    match datamodel::parse_datamodel(datamodel_string) {
-        Ok(_) => panic!("Expected an error when parsing schema."),
-        Err(errs) => errs,
+#[track_caller]
+pub(crate) fn assert_valid(schema: &str) {
+    match datamodel::parse_schema(schema) {
+        Ok(_) => (),
+        Err(err) => panic!("{err}"),
     }
 }
 
@@ -526,24 +478,5 @@ pub(crate) const MYSQL_SOURCE: &str = r#"
     datasource db {
         provider = "mysql"
         url      = "mysql://localhost:3306"
-    }
-"#;
-
-pub(crate) const MSSQL_SOURCE: &str = r#"
-    datasource db {
-        provider = "sqlserver"
-        url      = "sqlserver://localhost:1433"
-    }
-"#;
-
-pub(crate) const COCKROACHDB_SOURCE: &str = r#"
-    datasource db {
-        provider = "cockroachdb"
-        url      = "postgresql://localhost:5432"
-    }
-
-    generator js {
-        provider = "prisma-client-js"
-        previewFeatures = ["cockroachdb"]
     }
 "#;

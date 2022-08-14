@@ -3,8 +3,8 @@ use crate::PrismaResponse;
 use futures::FutureExt;
 use indexmap::IndexMap;
 use query_core::{
-    BatchDocument, CompactedDocument, Item, Operation, QueryDocument, QueryExecutor, QuerySchemaRef, QueryValue,
-    ResponseData, TxId,
+    schema::QuerySchemaRef, BatchDocument, CompactedDocument, Item, Operation, QueryDocument, QueryExecutor,
+    QueryValue, ResponseData, TxId,
 };
 use std::{fmt, panic::AssertUnwindSafe};
 
@@ -35,7 +35,10 @@ impl<'a> GraphQlHandler<'a> {
                 }
                 BatchDocument::Compact(compacted) => self.handle_compacted(compacted, tx_id, trace_id).await,
             },
-            Err(err) => PrismaResponse::Single(err.into()),
+            Err(err) => match err.as_known_error() {
+                Some(transformed) => PrismaResponse::Single(user_facing_errors::Error::new_known(transformed).into()),
+                None => PrismaResponse::Single(err.into()),
+            },
         }
     }
 
@@ -99,7 +102,6 @@ impl<'a> GraphQlHandler<'a> {
         }
     }
 
-    #[tracing::instrument(skip(self, document))]
     async fn handle_compacted(
         &self,
         document: CompactedDocument,

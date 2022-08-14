@@ -1,233 +1,867 @@
-use crate::{
-    common::*,
-    types::helper::{
-        test_native_types_compatibility, test_native_types_with_field_attribute_support,
-        test_native_types_without_attributes,
-    },
-};
-use datamodel::{ast, diagnostics::DatamodelError};
-use indoc::indoc;
+use crate::common::*;
+use indoc::{formatdoc, indoc};
 use native_types::{MsSqlType, MsSqlTypeParameter::*};
 
-const BLOB_TYPES: &[&str] = &["VarBinary(Max)", "Image"];
-const TEXT_TYPES: &[&str] = &["Text", "NText", "VarChar(Max)", "NVarChar(Max)", "Xml"];
-
 #[test]
-fn text_and_blob_data_types_should_fail_on_index() {
-    fn error_msg(type_name: &str) -> String {
-        format!(
-            "You cannot define an index on fields with Native type {} of SQL Server.",
-            type_name
-        )
-    }
+fn text_type_should_fail_on_unique() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    for tpe in BLOB_TYPES {
-        test_block_attribute_support(tpe, "Bytes", "index", &error_msg(tpe));
-    }
+        model User {
+          id        Int    @id
+          firstName String @db.Text
+          lastName  String @db.Text
 
-    for tpe in TEXT_TYPES {
-        test_block_attribute_support(tpe, "String", "index", &error_msg(tpe));
-    }
+          @@unique([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `Text` cannot be unique in SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@unique([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
-fn text_and_blob_data_types_can_not_be_unique() {
-    fn error_msg(type_name: &str) -> String {
-        format!("Native type {} cannot be unique in SQL Server.", type_name)
-    }
+fn ntext_type_should_fail_on_unique() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    for tpe in BLOB_TYPES {
-        test_native_types_with_field_attribute_support(tpe, "Bytes", "unique", &error_msg(tpe), MSSQL_SOURCE);
-        test_block_attribute_support(tpe, "Bytes", "unique", &error_msg(tpe));
-    }
+        model User {
+          id        Int    @id
+          firstName String @db.NText
+          lastName  String @db.NText
 
-    for tpe in TEXT_TYPES {
-        test_native_types_with_field_attribute_support(tpe, "String", "unique", &error_msg(tpe), MSSQL_SOURCE);
-        test_block_attribute_support(tpe, "String", "unique", &error_msg(tpe));
-    }
+          @@unique([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `NText` cannot be unique in SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@unique([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
-fn text_and_blob_data_types_should_fail_on_id_attribute() {
-    fn error_msg(type_name: &str) -> String {
-        format!(
-            "Native type {} of SQL Server cannot be used on a field that is `@id` or `@@id`.",
-            type_name
-        )
-    }
+fn varchar_max_type_should_fail_on_unique() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    for tpe in BLOB_TYPES {
-        test_native_types_with_field_attribute_support(tpe, "Bytes", "id", &error_msg(tpe), MSSQL_SOURCE);
-        test_block_attribute_support(tpe, "Bytes", "id", &error_msg(tpe));
-    }
+        model User {
+          id        Int    @id
+          firstName String @db.VarChar(Max)
+          lastName  String @db.VarChar(Max)
 
-    for tpe in TEXT_TYPES {
-        test_native_types_with_field_attribute_support(tpe, "String", "id", &error_msg(tpe), MSSQL_SOURCE);
-        test_block_attribute_support(tpe, "String", "id", &error_msg(tpe));
-    }
+          @@unique([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `VarChar(Max)` cannot be unique in SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@unique([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
-fn test_block_attribute_support(native_type: &str, scalar_type: &str, attribute_name: &str, error_msg: &str) {
-    let id_field = if attribute_name == "id" {
-        ""
-    } else {
-        "id     Int    @id"
-    };
+#[test]
+fn nvarchar_max_type_should_fail_on_unique() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    let dml = format!(
-        r#"
-        model User {{
-            {id_field}
-            firstname {scalar_type} @db.{native_type}
-            lastname  {scalar_type} @db.{native_type}
-            @@{attribute_name}([firstname, lastname])
-        }}
-    "#,
-        id_field = id_field,
-        native_type = native_type,
-        scalar_type = scalar_type,
-        attribute_name = attribute_name
-    );
+        model User {
+          id        Int    @id
+          firstName String @db.NVarChar(Max)
+          lastName  String @db.NVarChar(Max)
 
-    test_native_types_compatibility(&dml, error_msg, MSSQL_SOURCE);
+          @@unique([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `NVarChar(Max)` cannot be unique in SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@unique([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn xml_type_should_fail_on_unique() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int    @id
+          firstName String @db.Xml
+          lastName  String @db.Xml
+
+          @@unique([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `Xml` cannot be unique in SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@unique([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn varbinary_max_type_should_fail_on_unique() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int   @id
+          firstName Bytes @db.VarBinary(Max)
+          lastName  Bytes @db.VarBinary(Max)
+
+          @@unique([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `VarBinary(Max)` cannot be unique in SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@unique([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn image_type_should_fail_on_unique() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int   @id
+          firstName Bytes @db.Image
+          lastName  Bytes @db.Image
+
+          @@unique([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `Image` cannot be unique in SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@unique([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn text_type_should_fail_on_index() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int    @id
+          firstName String @db.Text
+          lastName  String @db.Text
+
+          @@index([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mYou cannot define an index on fields with native type `Text` of SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@index([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn ntext_type_should_fail_on_index() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int    @id
+          firstName String @db.NText
+          lastName  String @db.NText
+
+          @@index([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mYou cannot define an index on fields with native type `NText` of SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@index([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn varchar_max_type_should_fail_on_index() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int    @id
+          firstName String @db.VarChar(Max)
+          lastName  String @db.VarChar(Max)
+
+          @@index([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mYou cannot define an index on fields with native type `VarChar(Max)` of SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@index([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn nvarchar_max_type_should_fail_on_index() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int    @id
+          firstName String @db.NVarChar(Max)
+          lastName  String @db.NVarChar(Max)
+
+          @@index([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mYou cannot define an index on fields with native type `NVarChar(Max)` of SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@index([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn xml_type_should_fail_on_index() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int    @id
+          firstName String @db.Xml
+          lastName  String @db.Xml
+
+          @@index([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mYou cannot define an index on fields with native type `Xml` of SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@index([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn varbinary_max_type_should_fail_on_index() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int   @id
+          firstName Bytes @db.VarBinary(Max)
+          lastName  Bytes @db.VarBinary(Max)
+
+          @@index([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mYou cannot define an index on fields with native type `VarBinary(Max)` of SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@index([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn image_type_should_fail_on_index() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          id        Int   @id
+          firstName Bytes @db.Image
+          lastName  Bytes @db.Image
+
+          @@index([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mYou cannot define an index on fields with native type `Image` of SQL Server.[0m
+          [1;94m-->[0m  [4mschema.prisma:11[0m
+        [1;94m   | [0m
+        [1;94m10 | [0m
+        [1;94m11 | [0m  [1;91m@@index([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn text_type_should_fail_on_id() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          firstName String @db.Text
+          lastName  String @db.Text
+
+          @@id([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `Text` of SQL Server cannot be used on a field that is `@id` or `@@id`.[0m
+          [1;94m-->[0m  [4mschema.prisma:10[0m
+        [1;94m   | [0m
+        [1;94m 9 | [0m
+        [1;94m10 | [0m  [1;91m@@id([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn ntext_type_should_fail_on_id() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          firstName String @db.NText
+          lastName  String @db.NText
+
+          @@id([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `NText` of SQL Server cannot be used on a field that is `@id` or `@@id`.[0m
+          [1;94m-->[0m  [4mschema.prisma:10[0m
+        [1;94m   | [0m
+        [1;94m 9 | [0m
+        [1;94m10 | [0m  [1;91m@@id([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn varchar_max_type_should_fail_on_id() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          firstName String @db.VarChar(Max)
+          lastName  String @db.VarChar(Max)
+
+          @@id([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `VarChar(Max)` of SQL Server cannot be used on a field that is `@id` or `@@id`.[0m
+          [1;94m-->[0m  [4mschema.prisma:10[0m
+        [1;94m   | [0m
+        [1;94m 9 | [0m
+        [1;94m10 | [0m  [1;91m@@id([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn nvarchar_max_type_should_fail_on_id() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          firstName String @db.NVarChar(Max)
+          lastName  String @db.NVarChar(Max)
+
+          @@id([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `NVarChar(Max)` of SQL Server cannot be used on a field that is `@id` or `@@id`.[0m
+          [1;94m-->[0m  [4mschema.prisma:10[0m
+        [1;94m   | [0m
+        [1;94m 9 | [0m
+        [1;94m10 | [0m  [1;91m@@id([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn xml_type_should_fail_on_id() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          firstName String @db.Xml
+          lastName  String @db.Xml
+
+          @@id([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `Xml` of SQL Server cannot be used on a field that is `@id` or `@@id`.[0m
+          [1;94m-->[0m  [4mschema.prisma:10[0m
+        [1;94m   | [0m
+        [1;94m 9 | [0m
+        [1;94m10 | [0m  [1;91m@@id([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn varbinary_max_type_should_fail_on_id() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          firstName Bytes @db.VarBinary(Max)
+          lastName  Bytes @db.VarBinary(Max)
+
+          @@id([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `VarBinary(Max)` of SQL Server cannot be used on a field that is `@id` or `@@id`.[0m
+          [1;94m-->[0m  [4mschema.prisma:10[0m
+        [1;94m   | [0m
+        [1;94m 9 | [0m
+        [1;94m10 | [0m  [1;91m@@id([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
+}
+
+#[test]
+fn image_type_should_fail_on_id() {
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
+
+        model User {
+          firstName Bytes @db.Image
+          lastName  Bytes @db.Image
+
+          @@id([firstName, lastName])
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type `Image` of SQL Server cannot be used on a field that is `@id` or `@@id`.[0m
+          [1;94m-->[0m  [4mschema.prisma:10[0m
+        [1;94m   | [0m
+        [1;94m 9 | [0m
+        [1;94m10 | [0m  [1;91m@@id([firstName, lastName])[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_native_type_decimal_when_scale_is_bigger_than_precision() {
-    let dml = indoc!(
-        r#"
+    let schema = indoc! {r#"
         datasource db {
-            provider = "sqlserver"
-            url      = "sqlserver://"
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
         }
 
         model Blog {
-            id  Int     @id
-            dec Decimal @db.Decimal(2,4)
+          id  Int     @id
+          dec Decimal @db.Decimal(2,4)
         }
-    "#
-    );
+    "#};
+
     let expectation = expect![[r#"
         [1;91merror[0m: [1mThe scale must not be larger than the precision for the Decimal(2,4) native type in SQL Server.[0m
           [1;94m-->[0m  [4mschema.prisma:8[0m
         [1;94m   | [0m
-        [1;94m 7 | [0m    id  Int     @id
-        [1;94m 8 | [0m    dec Decimal @[1;91mdb.Decimal(2,4)[0m
+        [1;94m 7 | [0m  id  Int     @id
+        [1;94m 8 | [0m  dec Decimal [1;91m@db.Decimal(2,4)[0m
         [1;94m   | [0m
     "#]];
-    expect_error(dml, &expectation);
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_argument_out_of_range_for_char_type() {
-    let error_msg =
-        "Argument M is out of range for Native type Char(8001) of SQL Server: Length can range from 1 to 8000.";
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    test_native_types_without_attributes("Char(8001)", "String", error_msg, MSSQL_SOURCE);
+        model Blog {
+          id  Int    @id
+          dec String @db.Char(8001)
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mArgument M is out of range for native type `Char(8001)` of SQL Server: Length can range from 1 to 8000.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id  Int    @id
+        [1;94m 8 | [0m  dec String [1;91m@db.Char(8001)[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_argument_out_of_range_for_nchar_type() {
-    let error_msg =
-        "Argument M is out of range for Native type NChar(4001) of SQL Server: Length can range from 1 to 4000.";
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    test_native_types_without_attributes("NChar(4001)", "String", error_msg, MSSQL_SOURCE);
+        model Blog {
+          id  Int    @id
+          dec String @db.NChar(4001)
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mArgument M is out of range for native type `NChar(4001)` of SQL Server: Length can range from 1 to 4000.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id  Int    @id
+        [1;94m 8 | [0m  dec String [1;91m@db.NChar(4001)[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_argument_out_of_range_for_varchar_type() {
-    let error_msg = "Argument M is out of range for Native type VarChar(8001) of SQL Server: Length can range from 1 to 8000. For larger sizes, use the `Max` variant.";
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    test_native_types_without_attributes("VarChar(8001)", "String", error_msg, MSSQL_SOURCE);
+        model Blog {
+          id  Int    @id
+          dec String @db.VarChar(8001)
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mArgument M is out of range for native type `VarChar(8001)` of SQL Server: Length can range from 1 to 8000. For larger sizes, use the `Max` variant.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id  Int    @id
+        [1;94m 8 | [0m  dec String [1;91m@db.VarChar(8001)[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_argument_out_of_range_for_nvarchar_type() {
-    let error_msg = "Argument M is out of range for Native type NVarChar(4001) of SQL Server: Length can range from 1 to 4000. For larger sizes, use the `Max` variant.";
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    test_native_types_without_attributes("NVarChar(4001)", "String", error_msg, MSSQL_SOURCE);
+        model Blog {
+          id  Int    @id
+          dec String @db.NVarChar(4001)
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mArgument M is out of range for native type `NVarChar(4001)` of SQL Server: Length can range from 1 to 4000. For larger sizes, use the `Max` variant.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id  Int    @id
+        [1;94m 8 | [0m  dec String [1;91m@db.NVarChar(4001)[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_argument_out_of_range_for_varbinary_type() {
-    let error_msg = "Argument M is out of range for Native type VarBinary(8001) of SQL Server: Length can range from 1 to 8000. For larger sizes, use the `Max` variant.";
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    test_native_types_without_attributes("VarBinary(8001)", "Bytes", error_msg, MSSQL_SOURCE);
+        model Blog {
+          id  Int   @id
+          dec Bytes @db.VarBinary(8001)
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mArgument M is out of range for native type `VarBinary(8001)` of SQL Server: Length can range from 1 to 8000. For larger sizes, use the `Max` variant.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id  Int   @id
+        [1;94m 8 | [0m  dec Bytes [1;91m@db.VarBinary(8001)[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_argument_out_of_range_for_binary_type() {
-    let error_msg =
-        "Argument M is out of range for Native type Binary(8001) of SQL Server: Length can range from 1 to 8000.";
+    let schema = indoc! {r#"
+        datasource db {
+          provider = "sqlserver"
+          url      = env("DATABASE_URL")
+        }
 
-    test_native_types_without_attributes("Binary(8001)", "Bytes", error_msg, MSSQL_SOURCE);
+        model Blog {
+          id  Int   @id
+          dec Bytes @db.Binary(8001)
+        }
+    "#};
+
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mArgument M is out of range for native type `Binary(8001)` of SQL Server: Length can range from 1 to 8000.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id  Int   @id
+        [1;94m 8 | [0m  dec Bytes [1;91m@db.Binary(8001)[0m
+        [1;94m   | [0m
+    "#]];
+
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_incompatible_scalar_type_with_tiny_int() {
-    let dml = r#"
+    let schema = indoc! {r#"
         datasource db {
           provider = "sqlserver"
-          url = "sqlserver://"
+          url      = env("DATABASE_URL")
         }
 
         model Blog {
-            id     Int    @id
-            bigInt DateTime @db.Bit
+          id     Int      @id
+          bigInt DateTime @db.Bit
         }
-    "#;
+    "#};
 
-    let error = parse_error(dml);
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type Bit is not compatible with declared field type DateTime, expected field type Boolean or Int.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id     Int      @id
+        [1;94m 8 | [0m  bigInt DateTime [1;91m@db.Bit[0m
+        [1;94m   | [0m
+    "#]];
 
-    error.assert_is(DatamodelError::new(
-        "Native type Bit is not compatible with declared field type DateTime, expected field type Boolean or Int."
-            .into(),
-        ast::Span::new(180, 186),
-    ));
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_bad_type_params() {
-    let dml = r#"
+    let schema = indoc! {r#"
         datasource db {
           provider = "sqlserver"
-          url = "sqlserver://"
+          url      = env("DATABASE_URL")
         }
 
         model Blog {
-            id     Int    @id
-            s      String @db.NVarChar(Ma)
+          id     Int    @id
+          s      String @db.NVarChar(Ma)
         }
-    "#;
+    "#};
 
-    let error = parse_error(dml);
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mInvalid argument for type NVarChar: Ma. Allowed values: a number or `Max`.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id     Int    @id
+        [1;94m 8 | [0m  s      String [1;91m@db.NVarChar(Ma)[0m
+        [1;94m   | [0m
+    "#]];
 
-    error.assert_is(DatamodelError::new(
-        "Invalid argument for type NVarChar: Ma. Allowed values: a number or `Max`.".into(),
-        ast::Span::new(178, 193),
-    ));
+    expect_error(schema, &expectation);
 }
 
 #[test]
 fn should_fail_on_too_many_type_params() {
-    let dml = r#"
+    let schema = indoc! {r#"
         datasource db {
           provider = "sqlserver"
-          url = "sqlserver://"
+          url      = env("DATABASE_URL")
         }
 
         model Blog {
-            id     Int    @id
-            s      String @db.NVarChar(1, 2)
+          id     Int    @id
+          s      String @db.NVarChar(1, 2)
         }
-    "#;
+    "#};
 
-    let error = parse_error(dml);
+    let expectation = expect![[r#"
+        [1;91merror[0m: [1mNative type NVarChar takes 1 optional arguments, but received 2.[0m
+          [1;94m-->[0m  [4mschema.prisma:8[0m
+        [1;94m   | [0m
+        [1;94m 7 | [0m  id     Int    @id
+        [1;94m 8 | [0m  s      String [1;91m@db.NVarChar(1, 2)[0m
+        [1;94m   | [0m
+    "#]];
 
-    error.assert_is(DatamodelError::new(
-        "Native type NVarChar takes 1 optional arguments, but received 2.".into(),
-        ast::Span::new(178, 195),
-    ));
+    expect_error(schema, &expectation);
 }
 
 macro_rules! test_type {
@@ -235,17 +869,19 @@ macro_rules! test_type {
             #[test]
             fn $name () {
                 $(
-                    let dml = format!(r#"
+                    let input = $input;
+
+                    let dml = formatdoc!(r#"
                         datasource db {{
-                            provider = "sqlserver"
-                            url = "sqlserver://"
+                          provider = "sqlserver"
+                          url      = env("DATABASE_URL")
                         }}
 
                         model Blog {{
                             id Int    @id
-                            x  {}
+                            x  {input}
                         }}
-                    "#, $input);
+                    "#);
 
                     let instance = parse(&dml)
                         .assert_has_model("Blog")

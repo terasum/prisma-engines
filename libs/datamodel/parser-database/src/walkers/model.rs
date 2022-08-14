@@ -2,7 +2,10 @@ mod primary_key;
 mod unique_criteria;
 
 pub use primary_key::*;
+
 pub(crate) use unique_criteria::*;
+
+use schema_ast::ast::{IndentationType, NewlineType, WithSpan};
 
 use super::{
     CompleteInlineRelationWalker, IndexWalker, InlineRelationWalker, RelationFieldWalker, RelationWalker,
@@ -44,24 +47,24 @@ impl<'db> ModelWalker<'db> {
     }
 
     /// Whether MySQL would consider the field indexed for autoincrement purposes.
-    pub fn field_is_indexed_for_autoincrement(&self, field_id: ast::FieldId) -> bool {
+    pub fn field_is_indexed_for_autoincrement(self, field_id: ast::FieldId) -> bool {
         self.indexes()
             .any(|idx| idx.fields().next().map(|f| f.field_id()) == Some(field_id))
             || self
                 .primary_key()
-                .filter(|pk| pk.fields().next().map(|f| f.field_id) == Some(field_id))
+                .filter(|pk| pk.fields().next().map(|f| f.field_id()) == Some(field_id))
                 .is_some()
     }
 
     /// Whether the field is the whole primary key. Will match `@id` and `@@id([fieldName])`.
-    pub fn field_is_single_pk(&self, field: ast::FieldId) -> bool {
+    pub fn field_is_single_pk(self, field: ast::FieldId) -> bool {
         self.primary_key()
             .filter(|pk| pk.fields().map(|f| f.field_id()).collect::<Vec<_>>() == [field])
             .is_some()
     }
 
     /// Is the field part of a compound primary key.
-    pub fn field_is_part_of_a_compound_pk(&self, field: ast::FieldId) -> bool {
+    pub fn field_is_part_of_a_compound_pk(self, field: ast::FieldId) -> bool {
         self.primary_key()
             .filter(|pk| {
                 let exists = pk.fields().map(|f| f.field_id()).any(|f| f == field);
@@ -97,18 +100,23 @@ impl<'db> ModelWalker<'db> {
         self.model_attributes
             .mapped_name
             .map(|id| &self.db[id])
-            .unwrap_or_else(|| &self.db.ast[self.model_id].name.name)
+            .unwrap_or_else(|| self.db.ast[self.model_id].name())
+    }
+
+    /// Get the database name of the scalar field.
+    pub fn get_field_database_name(self, field_id: ast::FieldId) -> &'db str {
+        self.db.types.scalar_fields[&(self.model_id, field_id)]
+            .mapped_name
+            .map(|id| &self.db[id])
+            .unwrap_or_else(|| self.db.ast[self.model_id][field_id].name())
     }
 
     /// Get the database names of the constrained scalar fields.
     #[allow(clippy::unnecessary_lazy_evaluations)] // respectfully disagree
-    pub fn get_field_database_names<'a>(&'a self, fields: &'a [ast::FieldId]) -> impl Iterator<Item = &'db str> + 'a {
-        fields.iter().map(move |&field_id| {
-            self.db.types.scalar_fields[&(self.model_id, field_id)]
-                .mapped_name
-                .map(|id| &self.db[id])
-                .unwrap_or_else(|| &self.db.ast[self.model_id][field_id].name.name)
-        })
+    pub fn get_field_database_names(self, fields: &'db [ast::FieldId]) -> impl Iterator<Item = &'db str> {
+        fields
+            .iter()
+            .map(move |&field_id| self.get_field_database_name(field_id))
     }
 
     /// Used in validation. True only if the model has a single field id.
@@ -132,7 +140,7 @@ impl<'db> ModelWalker<'db> {
 
     /// Walk a scalar field by id.
     #[track_caller]
-    pub(crate) fn scalar_field(&self, field_id: ast::FieldId) -> ScalarFieldWalker<'db> {
+    pub(crate) fn scalar_field(self, field_id: ast::FieldId) -> ScalarFieldWalker<'db> {
         ScalarFieldWalker {
             model_id: self.model_id,
             field_id,
@@ -142,7 +150,7 @@ impl<'db> ModelWalker<'db> {
     }
 
     /// Iterate all the scalar fields in a given model in the order they were defined.
-    pub fn scalar_fields(self) -> impl Iterator<Item = ScalarFieldWalker<'db>> + 'db {
+    pub fn scalar_fields(self) -> impl Iterator<Item = ScalarFieldWalker<'db>> {
         let db = self.db;
         db.types
             .scalar_fields
@@ -157,7 +165,7 @@ impl<'db> ModelWalker<'db> {
 
     /// All unique criterias of the model; consisting of the primary key and
     /// unique indexes, if set.
-    pub fn unique_criterias(self) -> impl Iterator<Item = UniqueCriteriaWalker<'db>> + 'db {
+    pub fn unique_criterias(self) -> impl Iterator<Item = UniqueCriteriaWalker<'db>> {
         let model_id = self.model_id;
         let db = self.db;
 
@@ -183,10 +191,9 @@ impl<'db> ModelWalker<'db> {
         from_pk.chain(from_indices)
     }
 
-    /// Iterate all the relation fields in the model in the order they were
-    /// defined. Note that these are only the fields that were actually written
-    /// in the schema.
-    pub(crate) fn explicit_indexes(self) -> impl Iterator<Item = IndexWalker<'db>> + 'db {
+    /// Iterate all the indexes in the model in the order they were
+    /// defined.
+    pub fn indexes(self) -> impl Iterator<Item = IndexWalker<'db>> {
         let model_id = self.model_id;
         let db = self.db;
 
@@ -195,31 +202,14 @@ impl<'db> ModelWalker<'db> {
             .iter()
             .map(move |(index, index_attribute)| IndexWalker {
                 model_id,
-                index: Some(*index),
+                index: *index,
                 db,
                 index_attribute,
             })
     }
 
-    /// Iterate all the indexes in the model in the order they were
-    /// defined, followed by the implicit indexes.
-    pub fn indexes(self) -> impl Iterator<Item = IndexWalker<'db>> + 'db {
-        let implicit_indexes = self
-            .model_attributes
-            .implicit_indexes
-            .iter()
-            .map(move |index_attribute| IndexWalker {
-                model_id: self.model_id(),
-                index: None,
-                db: self.db,
-                index_attribute,
-            });
-
-        self.explicit_indexes().chain(implicit_indexes)
-    }
-
     /// All (concrete) relation fields of the model.
-    pub fn relation_fields(self) -> impl Iterator<Item = RelationFieldWalker<'db>> + 'db {
+    pub fn relation_fields(self) -> impl Iterator<Item = RelationFieldWalker<'db>> {
         let model_id = self.model_id;
         let db = self.db;
 
@@ -250,7 +240,7 @@ impl<'db> ModelWalker<'db> {
     }
 
     /// All relations that start from this model.
-    pub fn relations_from(self) -> impl Iterator<Item = RelationWalker<'db>> + 'db {
+    pub fn relations_from(self) -> impl Iterator<Item = RelationWalker<'db>> {
         self.db
             .relations
             .from_model(self.model_id)
@@ -261,7 +251,7 @@ impl<'db> ModelWalker<'db> {
     }
 
     /// All relations that reference this model.
-    pub fn relations_to(self) -> impl Iterator<Item = RelationWalker<'db>> + 'db {
+    pub fn relations_to(self) -> impl Iterator<Item = RelationWalker<'db>> {
         self.db
             .relations
             .to_model(self.model_id)
@@ -272,7 +262,7 @@ impl<'db> ModelWalker<'db> {
     }
 
     /// 1:n and 1:1 relations that start from this model.
-    pub fn inline_relations_from(self) -> impl Iterator<Item = InlineRelationWalker<'db>> + 'db {
+    pub fn inline_relations_from(self) -> impl Iterator<Item = InlineRelationWalker<'db>> {
         self.relations_from().filter_map(|relation| match relation.refine() {
             super::RefinedRelationWalker::Inline(relation) => Some(relation),
             super::RefinedRelationWalker::ImplicitManyToMany(_) => None,
@@ -281,8 +271,49 @@ impl<'db> ModelWalker<'db> {
     }
 
     /// 1:n and 1:1 relations, starting from this model and having both sides defined.
-    pub fn complete_inline_relations_from(self) -> impl Iterator<Item = CompleteInlineRelationWalker<'db>> + 'db {
+    pub fn complete_inline_relations_from(self) -> impl Iterator<Item = CompleteInlineRelationWalker<'db>> {
         self.inline_relations_from()
             .filter_map(|relation| relation.as_complete())
+    }
+
+    /// How fields and arguments are indented in the model.
+    pub fn indentation(self) -> IndentationType {
+        let field = match self.scalar_fields().last() {
+            Some(field) => field,
+            None => return IndentationType::default(),
+        };
+
+        let src = self.db.source();
+        let start = field.ast_field().span().start;
+
+        let mut spaces = 0;
+
+        for i in (0..start).rev() {
+            if src.is_char_boundary(i) {
+                match src[i..].chars().next() {
+                    Some('\t') => return IndentationType::Tabs,
+                    Some(' ') => spaces += 1,
+                    _ => return IndentationType::Spaces(spaces),
+                }
+            }
+        }
+
+        IndentationType::default()
+    }
+
+    /// What kind of newlines the model uses.
+    pub fn newline(self) -> NewlineType {
+        let field = match self.scalar_fields().last() {
+            Some(field) => field,
+            None => return NewlineType::default(),
+        };
+
+        let src = self.db.source();
+        let start = field.ast_field().span().end - 2;
+
+        match src.chars().nth(start) {
+            Some('\r') => NewlineType::Windows,
+            _ => NewlineType::Unix,
+        }
     }
 }

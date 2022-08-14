@@ -4,13 +4,18 @@ mod postgres;
 mod sqlite;
 
 use datamodel::{
-    datamodel_connector::ScalarType, parser_database::walkers::*, schema_ast::ast::FieldArity, ValidatedSchema,
+    parser_database::{ast::FieldArity, walkers::*},
+    ValidatedSchema,
 };
 use sql_schema_describer::{self as sql, ColumnArity, ColumnType, ColumnTypeFamily};
 
 pub(crate) trait SqlSchemaCalculatorFlavour {
     fn calculate_enums(&self, _datamodel: &ValidatedSchema) -> Vec<sql::Enum> {
         Vec::new()
+    }
+
+    fn column_default_value_for_autoincrement(&self) -> Option<sql::DefaultValue> {
+        None
     }
 
     fn column_type_for_unsupported_type(&self, field: ScalarFieldWalker<'_>, description: String) -> sql::ColumnType {
@@ -30,8 +35,6 @@ pub(crate) trait SqlSchemaCalculatorFlavour {
         None
     }
 
-    fn default_native_type_for_scalar_type(&self, scalar_type: &ScalarType) -> serde_json::Value;
-
     fn enum_column_type(&self, _field: ScalarFieldWalker<'_>, _db_name: &str) -> sql::ColumnType {
         unreachable!("unreachable enum_column_type")
     }
@@ -43,4 +46,6 @@ pub(crate) trait SqlSchemaCalculatorFlavour {
     fn m2m_foreign_key_action(&self, _model_a: ModelWalker<'_>, _model_b: ModelWalker<'_>) -> sql::ForeignKeyAction {
         sql::ForeignKeyAction::Cascade
     }
+
+    fn push_connector_data(&self, _context: &mut super::Context<'_>) {}
 }

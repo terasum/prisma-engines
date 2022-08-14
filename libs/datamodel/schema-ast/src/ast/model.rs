@@ -24,33 +24,58 @@ impl std::ops::Index<FieldId> for Model {
 #[derive(Debug, Clone)]
 pub struct Model {
     /// The name of the model.
-    pub name: Identifier,
+    ///
+    /// ```ignore
+    /// model Foo { .. }
+    ///       ^^^
+    /// ```
+    pub(crate) name: Identifier,
     /// The fields of the model.
-    pub fields: Vec<Field>,
+    ///
+    /// ```ignore
+    /// model Foo {
+    ///   id    Int    @id
+    ///   ^^^^^^^^^^^^^^^^
+    ///   field String
+    ///   ^^^^^^^^^^^^
+    /// }
+    /// ```
+    pub(crate) fields: Vec<Field>,
     /// The attributes of this model.
+    ///
+    /// ```ignore
+    /// model Foo {
+    ///   id    Int    @id
+    ///   field String
+    ///
+    ///   @@index([field])
+    ///   ^^^^^^^^^^^^^^^^
+    ///   @@map("Bar")
+    ///   ^^^^^^^^^^^^
+    /// }
+    /// ```
     pub attributes: Vec<Attribute>,
     /// The documentation for this model.
-    pub documentation: Option<Comment>,
+    ///
+    /// ```ignore
+    /// /// Lorem ipsum
+    ///     ^^^^^^^^^^^
+    /// model Foo {
+    ///   id    Int    @id
+    ///   field String
+    /// }
+    /// ```
+    pub(crate) documentation: Option<Comment>,
     /// The location of this model in the text representation.
-    pub span: Span,
-    /// Should this be commented out.
-    pub commented_out: bool,
+    pub(crate) span: Span,
 }
 
 impl Model {
-    pub fn iter_fields(&self) -> impl Iterator<Item = (FieldId, &Field)> {
+    pub fn iter_fields(&self) -> impl ExactSizeIterator<Item = (FieldId, &Field)> {
         self.fields
             .iter()
             .enumerate()
             .map(|(idx, field)| (FieldId(idx as u32), field))
-    }
-
-    pub fn find_field(&self, name: &str) -> Option<&Field> {
-        self.fields.iter().find(|ast_field| ast_field.name.name == name)
-    }
-
-    pub fn find_field_bang(&self, name: &str) -> &Field {
-        self.find_field(name).unwrap()
     }
 }
 
@@ -61,8 +86,8 @@ impl WithIdentifier for Model {
 }
 
 impl WithSpan for Model {
-    fn span(&self) -> &Span {
-        &self.span
+    fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -73,11 +98,7 @@ impl WithAttributes for Model {
 }
 
 impl WithDocumentation for Model {
-    fn documentation(&self) -> &Option<Comment> {
-        &self.documentation
-    }
-
-    fn is_commented_out(&self) -> bool {
-        self.commented_out
+    fn documentation(&self) -> Option<&str> {
+        self.documentation.as_ref().map(|doc| doc.text.as_str())
     }
 }

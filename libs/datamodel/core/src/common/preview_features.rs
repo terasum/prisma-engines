@@ -48,8 +48,8 @@ features!(
     Distinct,
     UncheckedScalarInputs,
     MicrosoftSqlServer,
-    MongoDb,
     OrderByRelation,
+    MongoDb,
     NApi,
     SelectRelationCount,
     OrderByAggregateGroup,
@@ -64,6 +64,9 @@ features!(
     ExtendedIndexes,
     Cockroachdb,
     Tracing,
+    ImprovedQueryRaw,
+    Metrics,
+    OrderByNulls,
 );
 
 // Mapping of which active, deprecated and hidden
@@ -72,20 +75,20 @@ features!(
 /// Generator preview features
 pub const GENERATOR: FeatureMap = FeatureMap::new()
     .with_active(&[
-        FilterJson,
         ReferentialIntegrity,
-        MongoDb,
         InteractiveTransactions,
         FullTextSearch,
         FullTextIndex,
-        DataProxy,
-        ExtendedIndexes,
-        Cockroachdb,
         Tracing,
+        Metrics,
+        OrderByNulls,
     ])
     .with_deprecated(&[
         AtomicNumberOperations,
         AggregateApi,
+        Cockroachdb,
+        ExtendedIndexes,
+        FilterJson,
         Middlewares,
         NamedConstraints,
         NativeTypes,
@@ -97,10 +100,13 @@ pub const GENERATOR: FeatureMap = FeatureMap::new()
         CreateMany,
         MicrosoftSqlServer,
         SelectRelationCount,
+        MongoDb,
         OrderByAggregateGroup,
         OrderByRelation,
         ReferentialActions,
         NApi,
+        ImprovedQueryRaw,
+        DataProxy,
     ]);
 
 #[derive(Debug)]

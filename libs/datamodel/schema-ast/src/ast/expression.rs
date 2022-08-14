@@ -21,7 +21,7 @@ impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expression::NumericValue(val, _) => fmt::Display::fmt(val, f),
-            Expression::StringValue(val, _) => write!(f, "\"{}\"", val),
+            Expression::StringValue(val, _) => write!(f, "{}", crate::string_literal(val)),
             Expression::ConstantValue(val, _) => fmt::Display::fmt(val, f),
             Expression::Function(fun, args, _) => {
                 let args = args.iter().map(ToString::to_string).collect::<Vec<_>>().join(",");
@@ -90,6 +90,10 @@ impl Expression {
             Expression::Function(_, _, _) => "functional",
             Expression::Array(_, _) => "array",
         }
+    }
+
+    pub fn is_function(&self) -> bool {
+        matches!(self, Expression::Function(_, _, _))
     }
 
     pub fn is_array(&self) -> bool {

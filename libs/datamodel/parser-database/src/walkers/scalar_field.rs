@@ -1,10 +1,12 @@
+use super::IndexFieldWalker;
 use crate::{
-    ast,
-    types::{DefaultAttribute, FieldWithArgs, ScalarField, ScalarType, SortOrder},
+    ast::{self, WithName},
+    types::{DefaultAttribute, FieldWithArgs, OperatorClassStore, ScalarField, ScalarType, SortOrder},
     walkers::{EnumWalker, ModelWalker, Walker},
-    ParserDatabase, ScalarFieldType,
+    OperatorClass, ParserDatabase, ScalarFieldType,
 };
 use diagnostics::Span;
+use either::Either;
 
 /// A scalar field, as part of a model.
 #[derive(Debug, Copy, Clone)]
@@ -81,7 +83,7 @@ impl<'db> ScalarFieldWalker<'db> {
         self.ast_field().arity.is_optional()
     }
 
-    /// Is there an `@updateAt` attribute on the field?
+    /// Is there an `@updatedAt` attribute on the field?
     pub fn is_updated_at(self) -> bool {
         self.attributes().is_updated_at
     }
@@ -133,20 +135,12 @@ impl<'db> ScalarFieldWalker<'db> {
 
     /// The `@default()` attribute of the field, if any.
     pub fn default_value(self) -> Option<DefaultValueWalker<'db>> {
-        self.attributes().default.as_ref().map(|d| DefaultValueWalker {
+        self.attributes().default.as_ref().map(|default| DefaultValueWalker {
             model_id: self.model_id,
             field_id: self.field_id,
             db: self.db,
-            default: d,
+            default,
         })
-    }
-
-    /// The type of the field, with type aliases resolved.
-    pub fn resolved_scalar_field_type(self) -> ScalarFieldType {
-        match self.attributes().r#type {
-            ScalarFieldType::Alias(id) => *self.db.alias_scalar_field_type(&id),
-            other => other,
-        }
     }
 
     /// The type of the field.
@@ -156,14 +150,9 @@ impl<'db> ScalarFieldWalker<'db> {
 
     /// The type of the field in case it is a scalar type (not an enum, not a composite type).
     pub fn scalar_type(self) -> Option<ScalarType> {
-        let mut tpe = &self.scalar_field.r#type;
-
-        loop {
-            match tpe {
-                ScalarFieldType::BuiltInScalar(scalar) => return Some(*scalar),
-                ScalarFieldType::Alias(alias_id) => tpe = &self.db.types.type_aliases[alias_id],
-                _ => return None,
-            }
+        match &self.scalar_field.r#type {
+            ScalarFieldType::BuiltInScalar(scalar) => Some(*scalar),
+            _ => None,
         }
     }
 }
@@ -171,10 +160,10 @@ impl<'db> ScalarFieldWalker<'db> {
 /// An `@default()` attribute on a field.
 #[derive(Clone, Copy)]
 pub struct DefaultValueWalker<'db> {
-    model_id: ast::ModelId,
-    field_id: ast::FieldId,
-    db: &'db ParserDatabase,
-    default: &'db DefaultAttribute,
+    pub(super) model_id: ast::ModelId,
+    pub(super) field_id: ast::FieldId,
+    pub(super) db: &'db ParserDatabase,
+    pub(super) default: &'db DefaultAttribute,
 }
 
 impl<'db> DefaultValueWalker<'db> {
@@ -218,6 +207,11 @@ impl<'db> DefaultValueWalker<'db> {
         matches!(self.value(), ast::Expression::Function(name, _, _) if name == "now")
     }
 
+    /// Is this an `@default(sequence())`?
+    pub fn is_sequence(self) -> bool {
+        matches!(self.value(), ast::Expression::Function(name, _, _) if name == "sequence")
+    }
+
     /// Is this an `@default(uuid())`?
     pub fn is_uuid(self) -> bool {
         matches!(self.value(), ast::Expression::Function(name, _, _) if name == "uuid")
@@ -250,6 +244,30 @@ impl<'db> DefaultValueWalker<'db> {
     }
 }
 
+/// An operator class defines the operators allowed in an index. Mostly
+/// a PostgreSQL thing.
+#[derive(Copy, Clone)]
+pub struct OperatorClassWalker<'db> {
+    pub(crate) class: &'db OperatorClassStore,
+    pub(crate) db: &'db ParserDatabase,
+}
+
+impl<'db> OperatorClassWalker<'db> {
+    /// Gets the operator class of the indexed field.
+    ///
+    /// ```ignore
+    /// @@index(name(ops: InetOps))
+    /// //                ^ Either::Left(InetOps)
+    /// @@index(name(ops: raw("tsvector_ops")))
+    /// //                ^ Either::Right("tsvector_ops")
+    pub fn get(self) -> Either<OperatorClass, &'db str> {
+        match self.class.inner {
+            Either::Left(class) => Either::Left(class),
+            Either::Right(id) => Either::Right(&self.db[id]),
+        }
+    }
+}
+
 /// A scalar field as referenced in a key specification (id, index or unique).
 #[derive(Copy, Clone)]
 pub struct ScalarFieldAttributeWalker<'db> {
@@ -274,9 +292,23 @@ impl<'db> ScalarFieldAttributeWalker<'db> {
         self.args().length
     }
 
-    /// The underlying scalar field.
+    /// A custom operator class to control the operators catched by the index.
     ///
     /// ```ignore
+    /// @@index([name(ops: InetOps)], type: Gist)
+    ///                    ^^^^^^^
+    /// ```
+    pub fn operator_class(self) -> Option<OperatorClassWalker<'db>> {
+        self.args()
+            .operator_class
+            .as_ref()
+            .map(|class| OperatorClassWalker { class, db: self.db })
+    }
+
+    /// The underlying field.
+    ///
+    /// ```ignore
+    /// // either this
     /// model Test {
     ///   id          Int @id
     ///   name        String
@@ -286,14 +318,112 @@ impl<'db> ScalarFieldAttributeWalker<'db> {
     ///   @@index([name])
     /// }
     ///
+    /// // or this
+    /// type A {
+    ///   field String
+    ///   ^^^^^^^^^^^^
+    /// }
+    ///
+    /// model Test {
+    ///   id Int @id
+    ///   a  A
+    ///
+    ///   @@index([a.field])
+    /// }
     /// ```
-    pub fn as_scalar_field(self) -> ScalarFieldWalker<'db> {
-        ScalarFieldWalker {
-            model_id: self.model_id,
-            field_id: self.args().field_id,
-            db: self.db,
-            scalar_field: &self.db.types.scalar_fields[&(self.model_id, self.args().field_id)],
+    pub fn as_index_field(self) -> IndexFieldWalker<'db> {
+        let path = &self.args().path;
+        let field_id = path.field_in_index();
+
+        match path.type_holding_the_indexed_field() {
+            None => {
+                let field_id = path.field_in_index();
+                let walker = self.db.walk_model(self.model_id).scalar_field(field_id);
+
+                IndexFieldWalker::new(walker)
+            }
+            Some(ctid) => {
+                let walker = self.db.walk_composite_type(ctid).field(field_id);
+                IndexFieldWalker::new(walker)
+            }
         }
+    }
+
+    /// Gives the full path from the current model to the field included in the index.
+    /// For example, if the field is through two composite types:
+    ///
+    /// ```ignore
+    /// type A {
+    ///   field Int
+    /// }
+    ///
+    /// type B {
+    ///   a A
+    /// }
+    ///
+    /// model C {
+    ///   id Int @id
+    ///   b  B
+    ///
+    ///   @@index([b.a.field])
+    /// }
+    /// ```
+    ///
+    /// The method would return a vector from model to the final field:
+    ///
+    /// ```ignore
+    /// vec![("b", None), ("a", Some("B")), ("field", Some("A"))];
+    /// ```
+    ///
+    /// The first part of the tuple is the name of the field, the second part is
+    /// the name of the composite type.
+    ///
+    /// This method prefers the prisma side naming, and should not be used when
+    /// writing to the database.
+    pub fn as_path_to_indexed_field(self) -> Vec<(&'db str, Option<&'db str>)> {
+        let path = &self.args().path;
+        let root = self.db.ast[self.model_id][path.root()].name();
+
+        let mut result = vec![(root, None)];
+
+        for (ctid, field_id) in path.path() {
+            let ct = &self.db.ast[*ctid];
+            let field = ct[*field_id].name();
+
+            result.push((field, Some(ct.name())));
+        }
+
+        result
+    }
+
+    /// Similar to the method [`as_path_to_indexed_field`], but prefers the
+    /// mapped names and is to be used when defining indices in the database.
+    ///
+    /// [`as_path_to_indexed_field`]: struct.ScalarFieldAttributeWalker
+    pub fn as_mapped_path_to_indexed_field(self) -> Vec<(&'db str, Option<&'db str>)> {
+        let path = &self.args().path;
+        let root = {
+            let mapped = &self.db.types.scalar_fields[&(self.model_id, path.root())].mapped_name;
+
+            mapped
+                .and_then(|id| self.db.interner.get(id))
+                .unwrap_or_else(|| self.db.ast[self.model_id][path.root()].name())
+        };
+
+        let mut result = vec![(root, None)];
+
+        for (ctid, field_id) in path.path() {
+            let ct = &self.db.ast[*ctid];
+
+            let field = &self.db.types.composite_type_fields[&(*ctid, *field_id)]
+                .mapped_name
+                .and_then(|id| self.db.interner.get(id))
+                .unwrap_or_else(|| ct[*field_id].name());
+
+            result.push((field, Some(ct.name())));
+        }
+
+        result
     }
 
     /// The sort order (asc or desc) on the field.
@@ -302,7 +432,7 @@ impl<'db> ScalarFieldAttributeWalker<'db> {
     /// @@index(name(sort: Desc))
     ///                    ^^^^
     /// ```
-    pub fn sort_order(&self) -> Option<SortOrder> {
+    pub fn sort_order(self) -> Option<SortOrder> {
         self.args().sort_order
     }
 }

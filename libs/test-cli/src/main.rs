@@ -218,7 +218,7 @@ async fn main() -> anyhow::Result<()> {
             .await
             .map_err(|err| anyhow::anyhow!("{:?}", err.data))?;
 
-            println!("{}", introspected);
+            println!("{}", &introspected.datamodel);
         }
         Command::ValidateDatamodel(cmd) => {
             use std::io::Read as _;
@@ -291,7 +291,7 @@ fn read_datamodel_from_file(path: &str) -> std::io::Result<String> {
 
 fn minimal_schema_from_url(url: &str) -> anyhow::Result<String> {
     let provider = match url.split("://").next() {
-        Some("file") | Some("sqlite") => "sqlite",
+        Some("file") => "sqlite",
         Some(s) if s.starts_with("postgres") => "postgresql",
         Some("mysql") => "mysql",
         Some("sqlserver") => "sqlserver",
@@ -461,10 +461,11 @@ fn init_logger() {
 
     let subscriber = FmtSubscriber::builder()
         .with_env_filter(EnvFilter::from_default_env())
-        .with_ansi(false)
+        .with_ansi(true)
         .with_writer(std::io::stderr)
         .finish()
-        .with(ErrorLayer::default());
+        .with(ErrorLayer::default())
+        .with(migration_core::TimingsLayer::default());
 
     tracing::subscriber::set_global_default(subscriber)
         .map_err(|err| eprintln!("Error initializing the global logger: {}", err))

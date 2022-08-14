@@ -9,14 +9,17 @@ mod field;
 mod find_at_position;
 mod generator_config;
 mod identifier;
+mod indentation_type;
 mod model;
+mod newline_type;
 mod source_config;
 mod top;
 mod traits;
 
+pub(crate) use self::comment::Comment;
+
 pub use argument::{Argument, ArgumentsList, EmptyArgument};
 pub use attribute::{Attribute, AttributeContainer, AttributeId};
-pub use comment::Comment;
 pub use composite_type::{CompositeType, CompositeTypeId};
 pub use config::ConfigBlockProperty;
 pub use diagnostics::Span;
@@ -25,7 +28,9 @@ pub use field::{Field, FieldArity, FieldType};
 pub use find_at_position::*;
 pub use generator_config::GeneratorConfig;
 pub use identifier::Identifier;
+pub use indentation_type::IndentationType;
 pub use model::{FieldId, Model};
+pub use newline_type::NewlineType;
 pub use r#enum::{Enum, EnumValue};
 pub use source_config::SourceConfig;
 pub use top::Top;
@@ -47,23 +52,6 @@ pub struct SchemaAst {
 }
 
 impl SchemaAst {
-    /// Construct an empty Schema AST.
-    pub fn empty() -> Self {
-        SchemaAst { tops: Vec::new() }
-    }
-
-    /// Deprecated. Use ParserDatabase instead where possible.
-    pub fn find_model(&self, model: &str) -> Option<&Model> {
-        self.iter_models().find(|(_, m)| m.name.name == model).map(|(_, m)| m)
-    }
-
-    fn iter_models(&self) -> impl Iterator<Item = (ModelId, &Model)> {
-        self.iter_tops().filter_map(|(top_id, top)| match (top_id, top) {
-            (TopId::Model(model_id), Top::Model(model)) => Some((model_id, model)),
-            _ => None,
-        })
-    }
-
     /// Iterate over all the top-level items in the schema.
     pub fn iter_tops(&self) -> impl Iterator<Item = (TopId, &Top)> {
         self.tops
@@ -115,19 +103,6 @@ impl std::ops::Index<EnumId> for SchemaAst {
     }
 }
 
-/// An opaque identifier for a type alias in a schema AST. Use the
-/// `schema[alias_id]` syntax to resolve the id to an `ast::Field`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AliasId(u32);
-
-impl std::ops::Index<AliasId> for SchemaAst {
-    type Output = Field;
-
-    fn index(&self, index: AliasId) -> &Self::Output {
-        self.tops[index.0 as usize].as_type_alias().unwrap()
-    }
-}
-
 /// An opaque identifier for a generator block in a schema AST.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GeneratorId(u32);
@@ -146,8 +121,6 @@ pub enum TopId {
     Model(ModelId),
     /// An enum declaration
     Enum(EnumId),
-    /// A type alias
-    Alias(AliasId),
     /// A generator block
     Generator(GeneratorId),
     /// A datasource block
@@ -186,7 +159,6 @@ impl std::ops::Index<TopId> for SchemaAst {
     fn index(&self, index: TopId) -> &Self::Output {
         let idx = match index {
             TopId::CompositeType(CompositeTypeId(idx)) => idx,
-            TopId::Alias(AliasId(idx)) => idx,
             TopId::Enum(EnumId(idx)) => idx,
             TopId::Model(ModelId(idx)) => idx,
             TopId::Generator(GeneratorId(idx)) => idx,
@@ -203,7 +175,6 @@ fn top_idx_to_top_id(top_idx: usize, top: &Top) -> TopId {
         Top::Model(_) => TopId::Model(ModelId(top_idx as u32)),
         Top::Source(_) => TopId::Source(SourceId(top_idx as u32)),
         Top::Generator(_) => TopId::Generator(GeneratorId(top_idx as u32)),
-        Top::Type(_) => TopId::Alias(AliasId(top_idx as u32)),
         Top::CompositeType(_) => TopId::CompositeType(CompositeTypeId(top_idx as u32)),
     }
 }

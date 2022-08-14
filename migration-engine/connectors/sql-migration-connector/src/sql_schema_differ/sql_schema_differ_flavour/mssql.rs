@@ -6,18 +6,22 @@ use crate::{
     sql_schema_differ::{column::ColumnTypeChange, differ_database::DifferDatabase, table::TableDiffer, ColumnChanges},
 };
 use native_types::{MsSqlType, MsSqlTypeParameter};
-use sql_schema_describer::{
-    walkers::{ColumnWalker, IndexWalker},
-    ColumnId, ColumnTypeFamily,
-};
+use sql_schema_describer::{self as sql, mssql::MssqlSchemaExt, ColumnId, ColumnTypeFamily};
 
 impl SqlSchemaDifferFlavour for MssqlFlavour {
     fn can_rename_foreign_key(&self) -> bool {
         true
     }
 
-    fn should_skip_index_for_new_table(&self, index: &IndexWalker<'_>) -> bool {
-        index.index_type().is_unique()
+    fn indexes_match(&self, a: sql::IndexWalker<'_>, b: sql::IndexWalker<'_>) -> bool {
+        let mssql_ext_previous: &MssqlSchemaExt = a.schema.downcast_connector_data();
+        let mssql_ext_next: &MssqlSchemaExt = b.schema.downcast_connector_data();
+
+        mssql_ext_previous.index_is_clustered(a.id) == mssql_ext_next.index_is_clustered(b.id)
+    }
+
+    fn should_skip_index_for_new_table(&self, index: sql::IndexWalker<'_>) -> bool {
+        index.is_unique()
     }
 
     fn should_recreate_the_primary_key_on_column_recreate(&self) -> bool {
@@ -49,7 +53,7 @@ impl SqlSchemaDifferFlavour for MssqlFlavour {
             .collect();
     }
 
-    fn column_type_change(&self, differ: Pair<ColumnWalker<'_>>) -> Option<ColumnTypeChange> {
+    fn column_type_change(&self, differ: Pair<sql::ColumnWalker<'_>>) -> Option<ColumnTypeChange> {
         let previous_family = differ.previous.column_type_family();
         let next_family = differ.next.column_type_family();
         let previous_type: Option<MsSqlType> = differ.previous.column_native_type();
@@ -59,6 +63,14 @@ impl SqlSchemaDifferFlavour for MssqlFlavour {
             (None, _) | (_, None) => family_change_riskyness(previous_family, next_family),
             (Some(previous), Some(next)) => native_type_change_riskyness(previous, next),
         }
+    }
+
+    fn primary_key_changed(&self, tables: Pair<sql::TableWalker<'_>>) -> bool {
+        let pk_clusterings = tables.map(|t| {
+            let ext: &MssqlSchemaExt = t.schema.downcast_connector_data();
+            t.primary_key().map(|pk| ext.index_is_clustered(pk.id)).unwrap_or(false)
+        });
+        pk_clusterings.previous != pk_clusterings.next
     }
 
     fn push_index_changes_for_column_changes(
@@ -73,24 +85,22 @@ impl SqlSchemaDifferFlavour for MssqlFlavour {
         }
 
         for dropped_index in table.index_pairs().filter(|pair| {
-            pair.previous()
+            pair.previous
                 .columns()
-                .any(|col| col.as_column().column_id() == *column_id.previous())
+                .any(|col| col.as_column().id == column_id.previous)
         }) {
             steps.push(SqlMigrationStep::DropIndex {
-                table_id: table.previous().table_id(),
-                index_index: dropped_index.previous().index(),
+                index_id: dropped_index.previous.id,
             })
         }
 
-        for created_index in table.index_pairs().filter(|pair| {
-            pair.next()
-                .columns()
-                .any(|col| col.as_column().column_id() == *column_id.next())
-        }) {
+        for created_index in table
+            .index_pairs()
+            .filter(|pair| pair.next.columns().any(|col| col.as_column().id == column_id.next))
+        {
             steps.push(SqlMigrationStep::CreateIndex {
-                table_id: (None, table.next().table_id()),
-                index_index: created_index.next().index(),
+                table_id: (None, table.next().id),
+                index_id: created_index.next.id,
                 from_drop_and_recreate: false,
             })
         }
@@ -1128,9 +1138,13 @@ fn native_type_change_riskyness(previous: MsSqlType, next: MsSqlType) -> Option<
         },
     };
 
-    if previous == next {
-        None
-    } else {
-        Some(cast())
+    match (previous, next) {
+        (p, n) if p == n => None,
+        // https://docs.microsoft.com/en-us/sql/t-sql/data-types/float-and-real-transact-sql?view=sql-server-ver16#syntax
+        (MsSqlType::Float(Some(53)), MsSqlType::Float(None))
+        | (MsSqlType::Float(None), MsSqlType::Float(Some(53)))
+        | (MsSqlType::Float(Some(24)), MsSqlType::Real)
+        | (MsSqlType::Real, MsSqlType::Float(Some(24))) => None,
+        _ => Some(cast()),
     }
 }

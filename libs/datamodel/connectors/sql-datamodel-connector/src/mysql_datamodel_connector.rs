@@ -1,7 +1,8 @@
+mod validations;
+
 use datamodel_connector::{
     helper::{args_vec_from_opt, parse_one_opt_u32, parse_one_u32, parse_two_opt_u32},
     parser_database::walkers::ModelWalker,
-    walker_ext_traits::*,
     Connector, ConnectorCapability, ConstraintScope, DatamodelError, Diagnostics, NativeTypeConstructor,
     NativeTypeInstance, ReferentialAction, ReferentialIntegrity, ScalarType, Span,
 };
@@ -91,7 +92,6 @@ const NATIVE_TYPE_CONSTRUCTORS: &[NativeTypeConstructor] = &[
 ];
 
 const CAPABILITIES: &[ConnectorCapability] = &[
-    ConnectorCapability::RelationsOverNonUniqueCriteria,
     ConnectorCapability::Enums,
     ConnectorCapability::EnumArrayPush,
     ConnectorCapability::Json,
@@ -115,6 +115,12 @@ const CAPABILITIES: &[ConnectorCapability] = &[
     ConnectorCapability::FullTextSearchWithIndex,
     ConnectorCapability::MultipleFullTextAttributesPerModel,
     ConnectorCapability::ImplicitManyToManyRelation,
+    ConnectorCapability::DecimalType,
+    ConnectorCapability::OrderByNullsFirstLast,
+    ConnectorCapability::SupportsTxIsolationReadUncommitted,
+    ConnectorCapability::SupportsTxIsolationReadCommitted,
+    ConnectorCapability::SupportsTxIsolationRepeatableRead,
+    ConnectorCapability::SupportsTxIsolationSerializable,
 ];
 
 const CONSTRAINT_SCOPES: &[ConstraintScope] = &[ConstraintScope::GlobalForeignKey, ConstraintScope::ModelKeyIndex];
@@ -134,6 +140,10 @@ const SCALAR_TYPE_DEFAULTS: &[(ScalarType, MySqlType)] = &[
 ];
 
 impl Connector for MySqlDatamodelConnector {
+    fn provider_name(&self) -> &'static str {
+        "mysql"
+    }
+
     fn name(&self) -> &str {
         "MySQL"
     }
@@ -259,59 +269,12 @@ impl Connector for MySqlDatamodelConnector {
     }
 
     fn validate_model(&self, model: ModelWalker<'_>, errors: &mut Diagnostics) {
-        let span = model.ast_model().span;
-
         for index in model.indexes() {
-            for field in index.scalar_field_attributes() {
-                if let Some(native_type) = field.as_scalar_field().native_type_instance(self) {
-                    if NATIVE_TYPES_THAT_CAN_NOT_BE_USED_IN_KEY_SPECIFICATION.contains(&native_type.name.as_str()) {
-                        // Length defined, so we allow the index.
-                        if field.length().is_some() {
-                            continue;
-                        }
-
-                        if index.is_fulltext() {
-                            continue;
-                        }
-
-                        if index.is_unique() {
-                            errors.push_error(
-                                self.native_instance_error(&native_type)
-                                    .new_incompatible_native_type_with_unique(" If you are using the `extendedIndexes` preview feature you can add a `length` argument to allow this.", span),
-                            )
-                        } else {
-                            errors.push_error(
-                                self.native_instance_error(&native_type)
-                                    .new_incompatible_native_type_with_index(" If you are using the `extendedIndexes` preview feature you can add a `length` argument to allow this.", span),
-                            )
-                        };
-
-                        break;
-                    }
-                }
-            }
+            validations::field_types_can_be_used_in_an_index(self, index, errors);
         }
 
         if let Some(pk) = model.primary_key() {
-            for id_field in pk.scalar_field_attributes() {
-                if let Some(native_type_instance) = id_field.as_scalar_field().native_type_instance(self) {
-                    if NATIVE_TYPES_THAT_CAN_NOT_BE_USED_IN_KEY_SPECIFICATION
-                        .contains(&native_type_instance.name.as_str())
-                    {
-                        // Length defined, so we allow the index.
-                        if id_field.length().is_some() {
-                            continue;
-                        }
-
-                        errors.push_error(
-                            self.native_instance_error(&native_type_instance)
-                                .new_incompatible_native_type_with_id(" If you are using the `extendedIndexes` preview feature you can add a `length` argument to allow this.", span),
-                        );
-
-                        break;
-                    }
-                }
-            }
+            validations::field_types_can_be_used_in_a_primary_key(self, pk, errors);
         }
     }
 

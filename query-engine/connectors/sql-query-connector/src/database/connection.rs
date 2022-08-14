@@ -6,23 +6,33 @@ use connector_interface::{
     self as connector, filter::Filter, AggregationRow, AggregationSelection, Connection, QueryArguments,
     ReadOperations, RecordFilter, Transaction, WriteArgs, WriteOperations,
 };
+use datamodel::common::preview_features::PreviewFeature;
 use prisma_models::{prelude::*, SelectionResult};
 use prisma_value::PrismaValue;
-use quaint::{connector::TransactionCapable, prelude::ConnectionInfo};
-use std::collections::HashMap;
+use quaint::{
+    connector::{IsolationLevel, TransactionCapable},
+    prelude::ConnectionInfo,
+};
+use std::{collections::HashMap, str::FromStr};
 
 pub struct SqlConnection<C> {
     inner: C,
     connection_info: ConnectionInfo,
+    features: Vec<PreviewFeature>,
 }
 
 impl<C> SqlConnection<C>
 where
     C: QueryExt + Send + Sync + 'static,
 {
-    pub fn new(inner: C, connection_info: &ConnectionInfo) -> Self {
+    pub fn new(inner: C, connection_info: &ConnectionInfo, features: Vec<PreviewFeature>) -> Self {
         let connection_info = connection_info.clone();
-        Self { inner, connection_info }
+
+        Self {
+            inner,
+            connection_info,
+            features,
+        }
     }
 }
 
@@ -33,14 +43,29 @@ impl<C> Connection for SqlConnection<C>
 where
     C: QueryExt + TransactionCapable + Send + Sync + 'static,
 {
-    #[tracing::instrument(skip(self))]
-    async fn start_transaction<'a>(&'a mut self) -> connector::Result<Box<dyn Transaction + 'a>> {
-        let fut_tx = self.inner.start_transaction();
+    async fn start_transaction<'a>(
+        &'a mut self,
+        isolation_level: Option<String>,
+    ) -> connector::Result<Box<dyn Transaction + 'a>> {
         let connection_info = &self.connection_info;
+        let features = self.features.clone();
+        let isolation_level = match isolation_level {
+            Some(level) => {
+                let transformed = IsolationLevel::from_str(&level)
+                    .map_err(SqlError::from)
+                    .map_err(|err| err.into_connector_error(&connection_info))?;
+
+                Some(transformed)
+            }
+            None => None,
+        };
+
+        let fut_tx = self.inner.start_transaction(isolation_level);
 
         catch(self.connection_info.clone(), async move {
             let tx: quaint::connector::Transaction = fut_tx.await.map_err(SqlError::from)?;
-            Ok(Box::new(SqlConnectorTransaction::new(tx, connection_info)) as Box<dyn Transaction>)
+
+            Ok(Box::new(SqlConnectorTransaction::new(tx, connection_info, features)) as Box<dyn Transaction>)
         })
         .await
     }
@@ -228,7 +253,7 @@ where
 
     async fn execute_raw(&mut self, inputs: HashMap<String, PrismaValue>) -> connector::Result<usize> {
         catch(self.connection_info.clone(), async move {
-            write::execute_raw(&self.inner, inputs).await
+            write::execute_raw(&self.inner, &self.features, inputs).await
         })
         .await
     }
@@ -240,7 +265,13 @@ where
         _query_type: Option<String>,
     ) -> connector::Result<serde_json::Value> {
         catch(self.connection_info.clone(), async move {
-            write::query_raw(&self.inner, inputs).await
+            write::query_raw(
+                &self.inner,
+                SqlInfo::from(&self.connection_info),
+                &self.features,
+                inputs,
+            )
+            .await
         })
         .await
     }
