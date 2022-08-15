@@ -1,6 +1,9 @@
 mod ast_builders;
 mod serialization_ast;
 
+pub use ast_builders::*;
+pub use serialization_ast::*;
+
 pub use serialization_ast::DataModelMetaFormat;
 
 use ast_builders::{schema_to_dmmf, DmmfQuerySchemaRenderer};
