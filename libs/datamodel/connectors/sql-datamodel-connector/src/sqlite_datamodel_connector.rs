@@ -20,6 +20,8 @@ const CAPABILITIES: &[ConnectorCapability] = &[
     ConnectorCapability::BackwardCompatibleQueryRaw,
     ConnectorCapability::OrderByNullsFirstLast,
     ConnectorCapability::SupportsTxIsolationSerializable,
+    #[cfg(feature = "sqlite-create-many")]
+    ConnectorCapability::CreateMany,
 ];
 
 pub struct SqliteDatamodelConnector;
