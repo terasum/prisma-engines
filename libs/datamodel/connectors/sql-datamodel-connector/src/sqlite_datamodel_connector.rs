@@ -22,6 +22,8 @@ const CAPABILITIES: &[ConnectorCapability] = &[
     ConnectorCapability::SupportsTxIsolationSerializable,
     #[cfg(feature = "sqlite-create-many")]
     ConnectorCapability::CreateMany,
+    #[cfg(feature = "sqlite-create-many")]
+    ConnectorCapability::CreateSkipDuplicates,
 ];
 
 pub struct SqliteDatamodelConnector;
