@@ -139,6 +139,7 @@ impl AliasedCondition for ScalarFilter {
     /// Conversion from a `ScalarFilter` to a query condition tree. Aliased when in a nested `SELECT`.
     fn aliased_cond(self, alias: Option<Alias>) -> ConditionTree<'static> {
         match self.condition {
+            #[cfg(feature = "postgresql")]
             ScalarCondition::Search(_, _) | ScalarCondition::NotSearch(_, _) => {
                 scalar_filter_aliased_cond_search(self, alias)
             }
@@ -147,6 +148,7 @@ impl AliasedCondition for ScalarFilter {
     }
 }
 
+#[cfg(feature = "postgresql")]
 fn scalar_filter_aliased_cond_search(sf: ScalarFilter, alias: Option<Alias>) -> ConditionTree<'static> {
     let mut projections = match sf.condition.clone() {
         ScalarCondition::Search(_, proj) => proj,
@@ -410,6 +412,7 @@ fn convert_scalar_filter(
     is_parent_aggregation: bool,
 ) -> ConditionTree<'static> {
     match cond {
+        #[cfg(any(feature = "postgresql", feature = "mysql"))]
         ScalarCondition::JsonCompare(json_compare) => {
             convert_json_filter(comparable, json_compare, mode, fields.first().unwrap().to_owned())
         }
@@ -420,6 +423,7 @@ fn convert_scalar_filter(
     }
 }
 
+#[cfg(any(feature = "postgresql", feature = "mysql"))]
 fn convert_json_filter(
     comparable: Expression<'static>,
     json_condition: JsonCondition,
@@ -431,14 +435,17 @@ fn convert_json_filter(
     let target_type = json_condition.target_type;
     let (expr_json, expr_string): (Expression, Expression) = if let Some(path) = json_filter_path {
         match path {
+            #[cfg(feature = "mysql")]
             JsonFilterPath::String(path) => (
                 json_extract(comparable.clone(), JsonPath::string(path.clone()), false).into(),
                 json_extract(comparable, JsonPath::string(path), true).into(),
             ),
+            #[cfg(feature = "postgresql")]
             JsonFilterPath::Array(path) => (
                 json_extract(comparable.clone(), JsonPath::array(path.clone()), false).into(),
                 json_extract(comparable, JsonPath::array(path), true).into(),
             ),
+            _ => unreachable!(),
         }
     } else {
         (comparable.clone(), comparable)
@@ -531,6 +538,7 @@ fn convert_json_filter(
     ConditionTree::single(condition)
 }
 
+#[cfg(any(feature = "postgresql", feature = "mysql"))]
 fn filter_json_type(comparable: Expression<'static>, value: PrismaValue) -> Compare {
     match value {
         PrismaValue::Json(json) => {
@@ -594,6 +602,9 @@ fn default_scalar_filter(
             }
             _ => comparable.not_in_selection(convert_values(fields, values)),
         },
+        #[cfg(not(feature = "postgresql"))]
+        ScalarCondition::Search(_, _) => unreachable!(),
+        #[cfg(feature = "postgresql")]
         ScalarCondition::Search(value, _) => {
             let query: String = value
                 .try_into()
@@ -601,6 +612,9 @@ fn default_scalar_filter(
 
             comparable.matches(query)
         }
+        #[cfg(not(feature = "postgresql"))]
+        ScalarCondition::NotSearch(_, _) => unreachable!(),
+        #[cfg(feature = "postgresql")]
         ScalarCondition::NotSearch(value, _) => {
             let query: String = value
                 .try_into()
@@ -708,6 +722,9 @@ fn insensitive_scalar_filter(
                 )
             }
         },
+        #[cfg(not(feature = "postgresql"))]
+        ScalarCondition::Search(_, _) => unreachable!(),
+        #[cfg(feature = "postgresql")]
         ScalarCondition::Search(value, _) => {
             let query: String = value
                 .try_into()
@@ -715,6 +732,9 @@ fn insensitive_scalar_filter(
 
             comparable.matches(query)
         }
+        #[cfg(not(feature = "postgresql"))]
+        ScalarCondition::NotSearch(_, _) => unreachable!(),
+        #[cfg(feature = "postgresql")]
         ScalarCondition::NotSearch(value, _) => {
             let query: String = value
                 .try_into()

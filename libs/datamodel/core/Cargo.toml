@@ -6,9 +6,9 @@ version = "0.1.0"
 [dependencies]
 datamodel-connector = { path = "../connectors/datamodel-connector" }
 dml = { path = "../connectors/dml" }
-mongodb-datamodel-connector = { path = "../connectors/mongodb-datamodel-connector" }
+mongodb-datamodel-connector = { path = "../connectors/mongodb-datamodel-connector", optional = true }
 schema-ast = { path = "../schema-ast" }
-sql-datamodel-connector = { path = "../connectors/sql-datamodel-connector" }
+sql-datamodel-connector = { path = "../connectors/sql-datamodel-connector", optional = true }
 diagnostics = { path = "../diagnostics" }
 parser-database = { path = "../parser-database" }
 
@@ -35,3 +35,6 @@ pretty_assertions = "0.6.1"
 [features]
 default_generators = ["dml/default_generators"]
 sqlite-create-many = ["sql-datamodel-connector/sqlite-create-many"]
+
+sql = ["sql-datamodel-connector"]
+mongodb = ["mongodb-datamodel-connector"]

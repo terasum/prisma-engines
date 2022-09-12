@@ -1,7 +1,11 @@
 mod connection;
+#[cfg(feature = "mssql")]
 mod mssql;
+#[cfg(feature = "mysql")]
 mod mysql;
+#[cfg(feature = "postgresql")]
 mod postgresql;
+#[cfg(feature = "sqlite")]
 mod sqlite;
 mod transaction;
 
@@ -11,9 +15,13 @@ use async_trait::async_trait;
 use connector_interface::{error::ConnectorError, Connector};
 use datamodel::{common::preview_features::PreviewFeature, Datasource};
 
+#[cfg(feature = "mssql")]
 pub use mssql::*;
+#[cfg(feature = "mysql")]
 pub use mysql::*;
+#[cfg(feature = "postgresql")]
 pub use postgresql::*;
+#[cfg(feature = "sqlite")]
 pub use sqlite::*;
 
 #[async_trait]

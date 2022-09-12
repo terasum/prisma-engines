@@ -8,10 +8,14 @@ use crate::{
 };
 use datamodel_connector::ReferentialIntegrity;
 use enumflags2::BitFlags;
-use mongodb_datamodel_connector::*;
 use parser_database::ast::WithDocumentation;
-use sql_datamodel_connector::*;
 use std::{borrow::Cow, collections::HashMap, convert::TryFrom};
+
+#[cfg(feature = "sql")]
+use sql_datamodel_connector::*;
+
+#[cfg(feature = "mongodb")]
+use mongodb_datamodel_connector::*;
 
 const PREVIEW_FEATURES_KEY: &str = "previewFeatures";
 const SHADOW_DATABASE_URL_KEY: &str = "shadowDatabaseUrl";
@@ -145,12 +149,19 @@ impl DatasourceLoader {
         let referential_integrity = get_referential_integrity(&args, preview_features, ast_source, diagnostics);
 
         let active_connector: &'static dyn datamodel_connector::Connector = match provider {
+            #[cfg(feature = "sql")]
             p if MYSQL.is_provider(p) => MYSQL,
+            #[cfg(feature = "sql")]
             p if POSTGRES.is_provider(p) => POSTGRES,
+            #[cfg(feature = "sql")]
             p if SQLITE.is_provider(p) => SQLITE,
+            #[cfg(feature = "sql")]
             p if MSSQL.is_provider(p) => MSSQL,
-            p if MONGODB.is_provider(p) => MONGODB,
+            #[cfg(feature = "sql")]
             p if COCKROACH.is_provider(p) => COCKROACH,
+
+            #[cfg(feature = "mongodb")]
+            p if MONGODB.is_provider(p) => MONGODB,
 
             _ => {
                 diagnostics.push_error(DatamodelError::new_datasource_provider_not_known_error(

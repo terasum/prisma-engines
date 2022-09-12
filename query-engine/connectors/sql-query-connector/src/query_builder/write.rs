@@ -29,10 +29,12 @@ pub fn create_record(model: &ModelRef, mut args: WriteArgs, trace_id: Option<Str
             insert.value(db_name.to_owned(), field.value(value))
         });
 
-    Insert::from(insert)
-        .returning(ModelProjection::from(model.primary_identifier()).as_columns())
-        .append_trace(&Span::current())
-        .add_trace_id(trace_id)
+    let insert = Insert::from(insert);
+
+    #[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
+    let insert = insert.returning(ModelProjection::from(model.primary_identifier()).as_columns());
+
+    insert.append_trace(&Span::current()).add_trace_id(trace_id)
 }
 
 /// `INSERT` new records into the database based on the given write arguments,

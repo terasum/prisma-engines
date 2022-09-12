@@ -35,7 +35,9 @@ pub fn build(
             OrderBy::ToManyAggregation(order_by) => {
                 build_order_aggr_rel(order_by, base_model, needs_reversed_order, index)
             }
+            #[cfg(any(feature = "postgresql", feature = "mysql"))]
             OrderBy::Relevance(order_by) => build_order_relevance(order_by, needs_reversed_order),
+            _ => unreachable!(),
         })
         .collect_vec()
 }
@@ -61,6 +63,7 @@ fn build_order_scalar(
     }
 }
 
+#[cfg(any(feature = "postgresql", feature = "mysql"))]
 fn build_order_relevance(order_by: &OrderByRelevance, needs_reversed_order: bool) -> OrderByDefinition {
     let columns: Vec<Expression> = order_by.fields.iter().map(|sf| sf.as_column().into()).collect();
     let order_column: Expression = text_search_relevance(&columns, order_by.search.clone()).into();

@@ -82,10 +82,15 @@ impl SqlInfo {
 impl From<&ConnectionInfo> for SqlInfo {
     fn from(ci: &ConnectionInfo) -> Self {
         match ci {
+            #[cfg(feature = "postgresql")]
             ConnectionInfo::Postgres(_) => Self::postgres(),
+            #[cfg(feature = "mysql")]
             ConnectionInfo::Mysql(_) => Self::mysql(),
+            #[cfg(feature = "mssql")]
             ConnectionInfo::Mssql(_) => Self::mssql(),
+            #[cfg(feature = "sqlite")]
             ConnectionInfo::Sqlite { .. } => Self::sqlite(),
+            #[cfg(feature = "sqlite")]
             ConnectionInfo::InMemorySqlite { .. } => Self::sqlite(),
         }
     }

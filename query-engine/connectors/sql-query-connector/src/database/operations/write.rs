@@ -5,16 +5,13 @@ use datamodel::common::preview_features::PreviewFeature;
 use itertools::Itertools;
 use prisma_models::*;
 use prisma_value::PrismaValue;
-use quaint::{
-    error::ErrorKind,
-    prelude::{native_uuid, uuid_to_bin, uuid_to_bin_swapped, Aliasable, Select, SqlFamily},
-};
+use quaint::{error::ErrorKind, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
     usize,
 };
-use tracing::log::trace;
+use tracing::trace;
 use user_facing_errors::query_engine::DatabaseConstraint;
 
 async fn generate_id(
@@ -40,8 +37,11 @@ async fn generate_id(
             let func = value.1.to_lowercase().replace(' ', "");
 
             match func.as_str() {
+                #[cfg(feature = "mysql")]
                 "(uuid())" => (query.value(native_uuid().alias(alias)), true),
+                #[cfg(feature = "mysql")]
                 "(uuid_to_bin(uuid()))" | "(uuid_to_bin(uuid(),0))" => (query.value(uuid_to_bin().alias(alias)), true),
+                #[cfg(feature = "mysql")]
                 "(uuid_to_bin(uuid(),1))" => (query.value(uuid_to_bin_swapped().alias(alias)), true),
                 _ => (query, generated),
             }
@@ -70,15 +70,16 @@ pub async fn create_record(
 ) -> crate::Result<SelectionResult> {
     let pk = model.primary_identifier();
 
-    let returned_id = if *sql_family == SqlFamily::Mysql {
-        generate_id(conn, &pk, trace_id.clone(), &args).await?
-    } else {
-        args.as_record_projection(pk.clone().into())
+    let returned_id = match sql_family {
+        #[cfg(feature = "mysql")]
+        SqlFamily::Mysql => generate_id(conn, &pk, trace_id.clone(), &args).await?,
+        _ => args.as_record_projection(pk.clone().into()),
     };
 
     let returned_id = returned_id.or_else(|| args.as_record_projection(pk.clone().into()));
 
     let args = match returned_id {
+        #[cfg(feature = "mysql")]
         Some(ref pk) if *sql_family == SqlFamily::Mysql => {
             for (field, value) in pk.pairs.iter() {
                 let field = DatasourceFieldName(field.db_name().into());
