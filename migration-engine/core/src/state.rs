@@ -17,7 +17,7 @@ use tracing_futures::Instrument;
 /// `connectors`. Each connector has its own async task, and communicates with the core through
 /// channels. That ensures that each connector is handling requests one at a time to avoid
 /// synchronization issues. You can think of it in terms of the actor model.
-pub(crate) struct EngineState {
+pub struct EngineState {
     initial_datamodel: Option<String>,
     host: Arc<dyn ConnectorHost>,
     // A map from either:
@@ -43,7 +43,8 @@ type ErasedConnectorRequest = Box<
 >;
 
 impl EngineState {
-    pub(crate) fn new(initial_datamodel: Option<String>, host: Option<Arc<dyn ConnectorHost>>) -> Self {
+    #[allow(missing_docs)]
+    pub fn new(initial_datamodel: Option<String>, host: Option<Arc<dyn ConnectorHost>>) -> Self {
         EngineState {
             initial_datamodel,
             host: host.unwrap_or_else(|| Arc::new(migration_connector::EmptyHost)),
@@ -105,7 +106,11 @@ impl EngineState {
         response_receiver.await.expect("receiver boomed")
     }
 
-    async fn with_connector_for_url<O: Send + 'static>(&self, url: String, f: ConnectorRequest<O>) -> CoreResult<O> {
+    pub async fn with_connector_for_url<O: Send + 'static>(
+        &self,
+        url: String,
+        f: ConnectorRequest<O>,
+    ) -> CoreResult<O> {
         let (response_sender, response_receiver) = tokio::sync::oneshot::channel::<CoreResult<O>>();
         let erased: ErasedConnectorRequest = Box::new(move |connector| {
             Box::pin(async move {
