@@ -9,10 +9,10 @@ include!(concat!(env!("OUT_DIR"), "/methods.rs"));
 #[doc(hidden)]
 pub mod commands;
 
-mod api;
+pub mod api;
 mod core_error;
 mod rpc;
-mod state;
+pub mod state;
 mod timings;
 
 pub use self::{api::GenericApi, core_error::*, rpc::rpc_api, timings::TimingsLayer};
