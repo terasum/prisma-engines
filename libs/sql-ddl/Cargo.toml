@@ -5,11 +5,11 @@ authors = ["Tom Houlé <tom@tomhoule.com>"]
 edition = "2021"
 
 [features]
-postgres = []
+postgresql = []
 mysql = []
 sqlite = []
 mssql = []
-default = ["postgres", "mysql", "sqlite", "mssql"]
+# default = ["postgres", "mysql", "sqlite", "mssql"]
 
 [dependencies]
 

@@ -106,6 +106,7 @@ impl EngineState {
         response_receiver.await.expect("receiver boomed")
     }
 
+    #[allow(missing_docs)]
     pub async fn with_connector_for_url<O: Send + 'static>(
         &self,
         url: String,

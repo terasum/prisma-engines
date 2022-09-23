@@ -4,6 +4,12 @@ edition = "2021"
 name = "sql-schema-describer"
 version = "0.1.0"
 
+[features]
+mysql = ["quaint/mysql", "barrel/mysql"]
+sqlite = ["quaint/sqlite", "barrel/sqlite3"]
+mssql = ["quaint/mssql", "barrel/mssql"]
+postgresql = ["quaint/postgresql", "barrel/pg"]
+
 [dependencies]
 native-types = { path = "../native-types" }
 prisma-value = { path = "../prisma-value" }
@@ -24,18 +30,10 @@ tracing-futures = "0.2"
 [dependencies.quaint]
 git = "https://github.com/prisma/quaint"
 rev = "fb4fe90682b4fecb485fd0d6975dd15a3bc9616b"
-features = [
-    "expose-drivers",
-    "chrono",
-    "sqlite",
-    "postgresql",
-    "mysql",
-    "mssql",
-    "bigdecimal"
-]
+features = ["expose-drivers", "chrono", "bigdecimal"]
 
 [dev-dependencies]
-barrel = { git = "https://github.com/prisma/barrel.git", rev = "4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805", features = ["sqlite3", "mysql", "pg", "mssql"] }
+barrel = { git = "https://github.com/prisma/barrel.git", rev = "4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805" }
 expect-test = "1.2.2"
 pretty_assertions = "0.6"
 test-macros = { path = "../test-macros" }

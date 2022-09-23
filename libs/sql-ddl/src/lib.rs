@@ -6,7 +6,7 @@ pub mod mssql;
 #[cfg(feature = "mysql")]
 pub mod mysql;
 
-#[cfg(feature = "postgres")]
+#[cfg(feature = "postgresql")]
 pub mod postgres;
 
 #[cfg(feature = "sqlite")]

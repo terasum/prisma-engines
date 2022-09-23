@@ -17,7 +17,7 @@ mod sql_schema_differ;
 
 use database_schema::SqlDatabaseSchema;
 use datamodel::ValidatedSchema;
-use flavour::{MssqlFlavour, MysqlFlavour, PostgresFlavour, SqlFlavour, SqliteFlavour};
+use flavour::*;
 use migration_connector::{migrations_directory::MigrationDirectory, *};
 use pair::Pair;
 use sql_migration::{DropUserDefinedType, DropView, SqlMigration, SqlMigrationStep};
@@ -34,6 +34,7 @@ pub struct SqlMigrationConnector {
 
 impl SqlMigrationConnector {
     /// Initialize a PostgreSQL migration connector.
+    #[cfg(feature = "postgresql")]
     pub fn new_postgres() -> Self {
         SqlMigrationConnector {
             flavour: Box::new(PostgresFlavour::default()),
@@ -42,6 +43,7 @@ impl SqlMigrationConnector {
     }
 
     /// Initialize a CockroachDb migration connector.
+    #[cfg(feature = "postgresql")]
     pub fn new_cockroach() -> Self {
         SqlMigrationConnector {
             flavour: Box::new(PostgresFlavour::new_cockroach()),
@@ -50,6 +52,7 @@ impl SqlMigrationConnector {
     }
 
     /// Initialize a SQLite migration connector.
+    #[cfg(feature = "sqlite")]
     pub fn new_sqlite() -> Self {
         SqlMigrationConnector {
             flavour: Box::new(SqliteFlavour::default()),
@@ -58,6 +61,7 @@ impl SqlMigrationConnector {
     }
 
     /// Initialize a MySQL migration connector.
+    #[cfg(feature = "mysql")]
     pub fn new_mysql() -> Self {
         SqlMigrationConnector {
             flavour: Box::new(MysqlFlavour::default()),
@@ -66,6 +70,7 @@ impl SqlMigrationConnector {
     }
 
     /// Initialize a MSSQL migration connector.
+    #[cfg(feature = "mssql")]
     pub fn new_mssql() -> Self {
         SqlMigrationConnector {
             flavour: Box::new(MssqlFlavour::default()),

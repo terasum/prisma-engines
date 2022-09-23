@@ -9,9 +9,13 @@
 //!   statements, this is done later.
 
 mod common;
+#[cfg(feature = "mssql")]
 mod mssql_renderer;
+#[cfg(feature = "mysql")]
 mod mysql_renderer;
+#[cfg(feature = "postgresql")]
 mod postgres_renderer;
+#[cfg(feature = "sqlite")]
 mod sqlite_renderer;
 
 pub(crate) use common::IteratorJoin;
