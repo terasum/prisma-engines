@@ -52,5 +52,6 @@ opt-level = 3
 
 [profile.release.package.introspection-core]
 codegen-units = 1
-opt-level = 'z' # Optimize for size.
+opt-level = 'z'   # Optimize for size.
 #strip="symbols"
+
