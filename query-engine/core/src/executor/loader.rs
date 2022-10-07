@@ -27,7 +27,7 @@ pub async fn load(
         p if SQLITE.is_provider(p) => sqlite(source, url, features).await,
         #[cfg(feature = "mysql")]
         p if MYSQL.is_provider(p) => mysql(source, url, features).await,
-        #[cfg(feature = "postgres")]
+        #[cfg(feature = "postgresql")]
         p if POSTGRES.is_provider(p) | COCKROACH.is_provider(p) => postgres(source, url, features).await,
         #[cfg(feature = "mssql")]
         p if MSSQL.is_provider(p) => mssql(source, url, features).await,
@@ -59,7 +59,7 @@ pub fn db_name(source: &Datasource, url: &str) -> crate::Result<String> {
 
             Ok(db_name)
         }
-        #[cfg(feature = "postgres")]
+        #[cfg(feature = "postgresql")]
         p if POSTGRES.is_provider(p) | COCKROACH.is_provider(p) => {
             let url = Url::parse(url)?;
             let params: HashMap<String, String> = url.query_pairs().into_owned().collect();
@@ -118,7 +118,7 @@ async fn sqlite(
     Ok((db_name, sql_executor(sqlite, false)))
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(feature = "postgresql")]
 async fn postgres(
     source: &Datasource,
     url: &str,
