@@ -48,7 +48,7 @@ pub(crate) fn order_by_object_type(
     return_cached_input!(ctx, &ident);
 
     let mut input_object = init_input_object_type(ident.clone());
-    input_object.allow_at_most_one_field();
+    input_object.require_at_most_one_field();
 
     let input_object = Arc::new(input_object);
     ctx.cache_input_type(ident, input_object.clone());
@@ -138,8 +138,8 @@ fn orderby_field_mapper(field: &ModelField, ctx: &mut BuilderContext, options: &
         ModelField::Scalar(sf) => {
             let mut types = vec![InputType::Enum(sort_order_enum(ctx))];
 
-            if ctx.has_feature(&PreviewFeature::OrderByNulls)
-                && ctx.capabilities.contains(ConnectorCapability::OrderByNullsFirstLast)
+            if ctx.has_feature(PreviewFeature::OrderByNulls)
+                && ctx.has_capability(ConnectorCapability::OrderByNullsFirstLast)
                 && !sf.is_required()
                 && !sf.is_list()
             {

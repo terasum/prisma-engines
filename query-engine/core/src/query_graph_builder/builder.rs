@@ -1,7 +1,13 @@
-use std::fmt;
+use once_cell::sync::Lazy;
+use std::{fmt, fs::File, io::Write};
 
 use super::*;
 use crate::{query_document::*, query_graph::*, schema::*, IrSerializer};
+
+pub static PRISMA_RENDER_DOT_FILE: Lazy<bool> = Lazy::new(|| match std::env::var("PRISMA_RENDER_DOT_FILE") {
+    Ok(enabled) => enabled == *("true") || enabled == *("1"),
+    Err(_) => false,
+});
 
 pub struct QueryGraphBuilder {
     pub query_schema: QuerySchemaRef,
@@ -33,8 +39,11 @@ impl QueryGraphBuilder {
         root_object: &ObjectTypeStrongRef, // Either the query or mutation object.
     ) -> QueryGraphBuilderResult<(QueryGraph, IrSerializer)> {
         let mut selections = vec![selection];
-        let mut parsed_object =
-            QueryDocumentParser::default().parse_object(QueryPath::default(), &selections, root_object)?;
+        let mut parsed_object = QueryDocumentParser::new(crate::executor::get_request_now()).parse_object(
+            QueryPath::default(),
+            &selections,
+            root_object,
+        )?;
 
         // Because we're processing root objects, there can only be one query / mutation.
         let field_pair = parsed_object.fields.pop().unwrap();
@@ -60,7 +69,9 @@ impl QueryGraphBuilder {
 
         let mut graph = match (&query_info.tag, query_info.model.clone()) {
             (QueryTag::FindUnique, Some(m)) => read::find_unique(parsed_field, m).map(Into::into),
+            (QueryTag::FindUniqueOrThrow, Some(m)) => read::find_unique_or_throw(parsed_field, m).map(Into::into),
             (QueryTag::FindFirst, Some(m)) => read::find_first(parsed_field, m).map(Into::into),
+            (QueryTag::FindFirstOrThrow, Some(m)) => read::find_first_or_throw(parsed_field, m).map(Into::into),
             (QueryTag::FindMany, Some(m)) => read::find_many(parsed_field, m).map(Into::into),
             (QueryTag::Aggregate, Some(m)) => read::aggregate(parsed_field, m).map(Into::into),
             (QueryTag::GroupBy, Some(m)) => read::group_by(parsed_field, m).map(Into::into),
@@ -79,6 +90,14 @@ impl QueryGraphBuilder {
         // Run final transformations.
         graph.finalize()?;
         trace!("{}", graph);
+
+        // Used to debug generated graph.
+        if *PRISMA_RENDER_DOT_FILE {
+            let mut f = File::create("graph.dot").unwrap();
+            let output = graph.to_graphviz();
+
+            f.write_all(&output.as_bytes()).unwrap();
+        }
 
         Ok(graph)
     }

@@ -1,9 +1,9 @@
 use super::*;
 use crate::{
     query_graph::{Node, NodeRef, QueryGraph, QueryGraphDependency},
-    FilteredQuery, ParsedInputMap, ParsedInputValue, Query, WriteQuery,
+    ParsedInputMap, ParsedInputValue, Query, WriteQuery,
 };
-use connector::{Filter, IntoFilter};
+use connector::{Filter, RelationCompare};
 use itertools::Itertools;
 use prisma_models::{ModelRef, PrismaValue, RelationFieldRef, SelectionResult};
 use std::convert::TryInto;
@@ -37,15 +37,18 @@ pub fn nested_disconnect(
         handle_many_to_many(graph, &parent_node, parent_relation_field, Filter::or(filters))
     } else {
         let filter: Filter = if relation.is_one_to_one() {
-            // One-to-one relations simply specify if they want to disconnect the child or not as a bool.
-            let val: PrismaValue = value.try_into()?;
-            let should_delete = if let PrismaValue::Boolean(b) = val { b } else { false };
+            // One-to-one relations can simply specify if they want to disconnect the child or not as a bool.
+            if let ParsedInputValue::Single(PrismaValue::Boolean(should_delete)) = value {
+                if !should_delete {
+                    return Ok(());
+                }
 
-            if !should_delete {
-                return Ok(());
+                Filter::empty()
+            } else {
+                let value: ParsedInputMap = value.try_into()?;
+
+                extract_filter(value, child_model)?
             }
-
-            Filter::empty()
         } else {
             // One-to-many specify a number of finders if the parent side is the to-one.
             // todo check if this if else is really still required.
@@ -151,7 +154,7 @@ fn handle_one_to_x(
 ) -> QueryGraphBuilderResult<()> {
     // Fetches the children to be disconnected.
     let find_child_records_node =
-        utils::insert_find_children_by_parent_node(graph, &parent_node, parent_relation_field, filter)?;
+        utils::insert_find_children_by_parent_node(graph, &parent_node, parent_relation_field, filter.clone())?;
 
     let child_relation_field = parent_relation_field.related_field();
 
@@ -162,14 +165,21 @@ fn handle_one_to_x(
     }
 
     // Depending on where the relation is inlined, we update the parent or the child nodes.
-    let (node_to_attach, model_to_update, extractor_model_id, null_record_id) =
+    let (node_to_attach, model_to_update, extractor_model_id, null_record_id, filter) =
         if parent_relation_field.is_inlined_on_enclosing_model() {
             // Inlined on parent
             let parent_model = parent_relation_field.model();
             let extractor_model_id = parent_model.primary_identifier();
             let null_record_id = SelectionResult::from(&parent_relation_field.linking_fields());
+            // If the relation is inlined on the parent and a filter is applied on the child then it means the update will be done on the parent table.
+            // Therefore, the filter applied on the child needs to be converted to a "relational" filter so that the connector renders the adequate SQL to join the Child table.
+            let filter = if !filter.is_empty() {
+                parent_relation_field.to_one_related(filter)
+            } else {
+                filter
+            };
 
-            (parent_node, parent_model, extractor_model_id, null_record_id)
+            (parent_node, parent_model, extractor_model_id, null_record_id, filter)
         } else {
             // Inlined on child
             let child_model = child_relation_field.model();
@@ -181,10 +191,11 @@ fn handle_one_to_x(
                 child_model,
                 extractor_model_id,
                 null_record_id,
+                filter,
             )
         };
 
-    let update_node = utils::update_records_node_placeholder(graph, Filter::empty(), model_to_update);
+    let update_node = utils::update_records_node_placeholder(graph, filter.clone(), model_to_update);
 
     // Edge to inject the correct data into the update (either from the parent or child).
     graph.create_edge(
@@ -199,7 +210,7 @@ fn handle_one_to_x(
 
                 // Handle filter & arg injection
                 if let Node::Query(Query::Write(ref mut wq @ WriteQuery::UpdateManyRecords(_))) = update_node {
-                    wq.set_filter(links.filter());
+                    wq.set_selectors(links);
                     wq.inject_result_into_args(null_record_id);
                 };
 

@@ -10,6 +10,10 @@ use std::{
 
 pub fn generate_rust_modules(out_dir: &Path) -> CrateResult {
     let api_defs_root = concat!(env!("CARGO_MANIFEST_DIR"), "/methods");
+
+    // https://doc.rust-lang.org/cargo/reference/build-scripts.html
+    println!("cargo:rerun-if-changed={}", api_defs_root);
+
     let entries = std::fs::read_dir(api_defs_root)?;
     let mut api = Api::default();
 
@@ -18,9 +22,6 @@ pub fn generate_rust_modules(out_dir: &Path) -> CrateResult {
         if !entry.file_type()?.is_file() {
             continue;
         }
-
-        // https://doc.rust-lang.org/cargo/reference/build-scripts.html
-        println!("cargo:rerun-if-changed={}", entry.path().to_string_lossy());
 
         let contents = std::fs::read_to_string(entry.path())?;
         eprintln!("Merging {}", entry.path().file_name().unwrap().to_string_lossy());
@@ -84,7 +85,7 @@ fn validate(api: &Api) {
 }
 
 fn shape_exists(shape: &str, api: &Api) -> bool {
-    let builtin_scalars = ["string", "bool", "u32"];
+    let builtin_scalars = ["string", "bool", "u32", "isize", "serde_json::Value"];
 
     if builtin_scalars.contains(&shape) {
         return true;

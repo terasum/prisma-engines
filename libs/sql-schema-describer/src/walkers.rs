@@ -2,11 +2,13 @@
 
 #![deny(missing_docs)]
 
+use psl::dml::PrismaValue;
+
 use crate::{
-    ids::*, Column, ColumnArity, ColumnType, ColumnTypeFamily, DefaultValue, Enum, ForeignKey, ForeignKeyAction,
-    ForeignKeyColumn, Index, IndexColumn, IndexType, SQLSortOrder, SqlSchema, Table, UserDefinedType, View,
+    ids::*, Column, ColumnArity, ColumnType, ColumnTypeFamily, DefaultKind, DefaultValue, Enum, ForeignKey,
+    ForeignKeyAction, ForeignKeyColumn, Index, IndexColumn, IndexType, SQLSortOrder, SqlSchema, Table, UserDefinedType,
+    View,
 };
-use serde::de::DeserializeOwned;
 use std::ops::Range;
 
 /// A generic reference to a schema item. It holds a reference to the schema so it can offer a
@@ -46,17 +48,88 @@ pub type TableWalker<'a> = Walker<'a, TableId>;
 /// Traverse an enum.
 pub type EnumWalker<'a> = Walker<'a, EnumId>;
 
+/// Traverse an enum variant.
+pub type EnumVariantWalker<'a> = Walker<'a, EnumVariantId>;
+
 /// Traverse an index.
 pub type IndexWalker<'a> = Walker<'a, IndexId>;
 
 /// Traverse a specific column inside an index.
 pub type IndexColumnWalker<'a> = Walker<'a, IndexColumnId>;
 
+/// Traverse a namespace
+pub type NamespaceWalker<'a> = Walker<'a, NamespaceId>;
+
 /// Traverse a user-defined type
 pub type UserDefinedTypeWalker<'a> = Walker<'a, UdtId>;
 
 /// Traverse a view
 pub type ViewWalker<'a> = Walker<'a, ViewId>;
+
+/// Traverse a default value
+pub type DefaultValueWalker<'a> = Walker<'a, DefaultValueId>;
+
+impl<'a> DefaultValueWalker<'a> {
+    /// Return a value if a constant.
+    pub fn as_value(self) -> Option<&'a PrismaValue> {
+        match self.kind() {
+            DefaultKind::Value(ref v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// If the value is a squence, return it
+    pub fn as_sequence(&self) -> Option<&str> {
+        match self.kind() {
+            DefaultKind::Sequence(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// True if a constant value
+    pub fn is_value(&self) -> bool {
+        matches!(self.kind(), DefaultKind::Value(_))
+    }
+
+    /// True if `now()`
+    pub fn is_now(&self) -> bool {
+        matches!(self.kind(), DefaultKind::Now)
+    }
+
+    /// True if referencing a sequence
+    pub fn is_sequence(&self) -> bool {
+        matches!(self.kind(), DefaultKind::Sequence(_))
+    }
+
+    /// True if value generation is handled in the database
+    pub fn is_db_generated(&self) -> bool {
+        matches!(self.kind(), DefaultKind::DbGenerated(_))
+    }
+
+    /// The value kind enumerator
+    pub fn kind(self) -> &'a DefaultKind {
+        &self.get().1.kind
+    }
+
+    /// The name of the default value constraint.
+    pub fn constraint_name(self) -> Option<&'a str> {
+        self.get().1.constraint_name.as_deref()
+    }
+
+    /// The column where the default value is located.
+    pub fn column(&self) -> ColumnWalker<'a> {
+        self.walk(self.get().0)
+    }
+
+    /// The default value data
+    pub fn inner(self) -> &'a DefaultValue {
+        &self.schema.default_values[self.id.0 as usize].1
+    }
+
+    fn get(self) -> &'a (ColumnId, DefaultValue) {
+        &self.schema.default_values[self.id.0 as usize]
+    }
+}
 
 impl<'a> ColumnWalker<'a> {
     /// The nullability and arity of the column.
@@ -70,7 +143,7 @@ impl<'a> ColumnWalker<'a> {
 
     /// Returns whether the column has the enum default value of the given enum type.
     pub fn column_has_enum_default_value(self, enum_name: &str, value: &str) -> bool {
-        self.column_type_family_as_enum().map(|enm| enm.name.as_str()) == Some(enum_name)
+        self.column_type_family_as_enum().map(|enm| enm.name()) == Some(enum_name)
             && self
                 .default()
                 .and_then(|default| default.as_value())
@@ -81,7 +154,7 @@ impl<'a> ColumnWalker<'a> {
     /// Returns whether the type of the column matches the provided enum name.
     pub fn column_type_is_enum(self, enum_name: &str) -> bool {
         self.column_type_family_as_enum()
-            .map(|enm| enm.name == enum_name)
+            .map(|enm| enm.name() == enum_name)
             .unwrap_or(false)
     }
 
@@ -91,13 +164,8 @@ impl<'a> ColumnWalker<'a> {
     }
 
     /// Extract an `Enum` column type family, or `None` if the family is something else.
-    pub fn column_type_family_as_enum(self) -> Option<&'a Enum> {
-        self.column_type_family().as_enum().map(|enum_name| {
-            self.schema
-                .get_enum(enum_name)
-                .ok_or_else(|| panic!("Cannot find enum referenced in ColumnTypeFamily (`{}`)", enum_name))
-                .unwrap()
-        })
+    pub fn column_type_family_as_enum(self) -> Option<EnumWalker<'a>> {
+        self.column_type_family().as_enum().map(|enum_id| self.walk(enum_id))
     }
 
     /// The column name.
@@ -106,8 +174,11 @@ impl<'a> ColumnWalker<'a> {
     }
 
     /// The default value for the column.
-    pub fn default(self) -> Option<&'a DefaultValue> {
-        self.get().1.default.as_ref()
+    pub fn default(self) -> Option<DefaultValueWalker<'a>> {
+        self.get()
+            .1
+            .default_value_id
+            .map(move |default_id| self.walk(default_id))
     }
 
     /// The full column type.
@@ -116,14 +187,8 @@ impl<'a> ColumnWalker<'a> {
     }
 
     /// The column native type.
-    pub fn column_native_type<T>(self) -> Option<T>
-    where
-        T: DeserializeOwned,
-    {
-        self.column_type()
-            .native_type
-            .as_ref()
-            .map(|val| serde_json::from_value(val.clone()).unwrap())
+    pub fn column_native_type<T: std::any::Any + 'static>(self) -> Option<&'a T> {
+        self.column_type().native_type.as_ref().map(|nt| nt.downcast_ref())
     }
 
     /// Is this column an auto-incrementing integer?
@@ -182,6 +247,14 @@ impl<'a> ViewWalker<'a> {
         self.view().definition.as_deref()
     }
 
+    /// The namespace of the view
+    pub fn namespace(self) -> Option<&'a str> {
+        self.schema
+            .namespaces
+            .get(self.view().namespace_id.0 as usize)
+            .map(|s| s.as_str())
+    }
+
     fn view(self) -> &'a View {
         &self.schema.views[self.id.0 as usize]
     }
@@ -196,6 +269,14 @@ impl<'a> UserDefinedTypeWalker<'a> {
     /// The SQL definition of the type
     pub fn definition(self) -> Option<&'a str> {
         self.udt().definition.as_deref()
+    }
+
+    /// The namespace of the type
+    pub fn namespace(self) -> Option<&'a str> {
+        self.schema
+            .namespaces
+            .get(self.udt().namespace_id.0 as usize)
+            .map(|s| s.as_str())
     }
 
     fn udt(self) -> &'a UserDefinedType {
@@ -244,12 +325,11 @@ impl<'a> TableWalker<'a> {
 
     /// Traverse foreign keys from other tables, referencing current table.
     pub fn referencing_foreign_keys(self) -> impl Iterator<Item = ForeignKeyWalker<'a>> {
-        let table_id = self.id;
         self.schema
             .table_walkers()
-            .filter(move |t| t.id != table_id)
+            .filter(move |t| t.id != self.id)
             .flat_map(|t| t.foreign_keys())
-            .filter(move |fk| fk.referenced_table().id == table_id)
+            .filter(move |fk| fk.referenced_table().id == self.id)
     }
 
     /// The table name.
@@ -267,6 +347,19 @@ impl<'a> TableWalker<'a> {
             let cols = fk.columns();
             cols.len() == 1 && cols[0].constrained_column == column
         })
+    }
+
+    /// The namespace the table belongs to, if defined.
+    pub fn namespace(self) -> Option<&'a str> {
+        self.schema
+            .namespaces
+            .get(self.table().namespace_id.0 as usize)
+            .map(|s| s.as_str())
+    }
+
+    /// The namespace the table belongs to.
+    pub fn namespace_id(self) -> NamespaceId {
+        self.table().namespace_id
     }
 
     /// Traverse to the primary key of the table.
@@ -436,14 +529,52 @@ impl<'a> EnumWalker<'a> {
         &self.schema.enums[self.id.0 as usize]
     }
 
+    /// The namespace the enum belongs to, if defined.
+    pub fn namespace(self) -> Option<&'a str> {
+        self.schema
+            .namespaces
+            .get(self.get().namespace_id.0 as usize)
+            .map(|s| s.as_str())
+    }
+
     /// The name of the enum. This is a made up name on MySQL.
     pub fn name(self) -> &'a str {
         &self.get().name
     }
 
-    /// The values of the enum
-    pub fn values(self) -> &'a [String] {
-        &self.get().values
+    /// The variants of the enum
+    pub fn variants(self) -> impl ExactSizeIterator<Item = EnumVariantWalker<'a>> {
+        range_for_key(&self.schema.enum_variants, self.id, |variant| variant.enum_id)
+            .map(move |idx| self.walk(EnumVariantId(idx as u32)))
+    }
+
+    /// The names of the variants of the enum
+    pub fn values(self) -> impl ExactSizeIterator<Item = &'a str> {
+        range_for_key(&self.schema.enum_variants, self.id, |variant| variant.enum_id)
+            .map(move |idx| self.schema.enum_variants[idx].variant_name.as_str())
+    }
+}
+
+impl<'a> EnumVariantWalker<'a> {
+    fn get(self) -> &'a super::EnumVariant {
+        &self.schema.enum_variants[self.id.0 as usize]
+    }
+
+    /// The parent enum.
+    pub fn r#enum(self) -> EnumWalker<'a> {
+        self.walk(self.get().enum_id)
+    }
+
+    /// The variant itself.
+    pub fn name(self) -> &'a str {
+        &self.get().variant_name
+    }
+}
+
+impl<'a> NamespaceWalker<'a> {
+    /// The namespace name.
+    pub fn name(self) -> &'a str {
+        &self.schema.namespaces[self.id.0 as usize]
     }
 }
 

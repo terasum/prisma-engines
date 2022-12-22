@@ -1,6 +1,7 @@
 use crate::{ConnectorTag, RunnerInterface, TestResult, TxResult};
-use prisma_models::InternalDataModelBuilder;
-use query_core::{executor, schema::QuerySchemaRef, schema_builder, MetricRegistry, QueryExecutor, TxId};
+use colored::Colorize;
+use query_core::{executor, schema::QuerySchemaRef, schema_builder, QueryExecutor, TxId};
+use query_engine_metrics::MetricRegistry;
 use request_handlers::{GraphQlBody, GraphQlHandler, MultiQuery};
 use std::{env, sync::Arc};
 
@@ -18,20 +19,13 @@ pub struct DirectRunner {
 #[async_trait::async_trait]
 impl RunnerInterface for DirectRunner {
     async fn load(datamodel: String, connector_tag: ConnectorTag, metrics: MetricRegistry) -> TestResult<Self> {
-        let config = datamodel::parse_configuration(&datamodel).unwrap().subject;
-        let data_source = config.datasources.first().expect("No valid data source found");
-        let preview_features: Vec<_> = config.preview_features().iter().collect();
+        let schema = psl::parse_schema(datamodel).unwrap();
+        let data_source = schema.configuration.datasources.first().unwrap();
         let url = data_source.load_url(|key| env::var(key).ok()).unwrap();
-        let (db_name, executor) = executor::load(data_source, &preview_features, &url).await?;
-        let internal_data_model = InternalDataModelBuilder::new(&datamodel).build(db_name);
+        let (db_name, executor) = executor::load(data_source, schema.configuration.preview_features(), &url).await?;
+        let internal_data_model = prisma_models::convert(Arc::new(schema), db_name);
 
-        let query_schema: QuerySchemaRef = Arc::new(schema_builder::build(
-            internal_data_model,
-            true,
-            data_source.capabilities(),
-            preview_features,
-            data_source.referential_integrity(),
-        ));
+        let query_schema: QuerySchemaRef = Arc::new(schema_builder::build(internal_data_model, true));
 
         Ok(Self {
             executor,
@@ -43,17 +37,25 @@ impl RunnerInterface for DirectRunner {
     }
 
     async fn query(&self, query: String) -> TestResult<crate::QueryResult> {
+        println!("{}", query.bright_green());
+
         let handler = GraphQlHandler::new(&*self.executor, &self.query_schema);
         let query = GraphQlBody::Single(query.into());
 
         Ok(handler.handle(query, self.current_tx_id.clone(), None).await.into())
     }
 
-    async fn batch(&self, queries: Vec<String>, transaction: bool) -> TestResult<crate::QueryResult> {
+    async fn batch(
+        &self,
+        queries: Vec<String>,
+        transaction: bool,
+        isolation_level: Option<String>,
+    ) -> TestResult<crate::QueryResult> {
         let handler = GraphQlHandler::new(&*self.executor, &self.query_schema);
         let query = GraphQlBody::Multi(MultiQuery::new(
             queries.into_iter().map(Into::into).collect(),
             transaction,
+            isolation_level,
         ));
 
         Ok(handler.handle(query, self.current_tx_id.clone(), None).await.into())
@@ -111,5 +113,9 @@ impl RunnerInterface for DirectRunner {
 
     fn get_metrics(&self) -> MetricRegistry {
         self.metrics.clone()
+    }
+
+    fn query_schema(&self) -> &QuerySchemaRef {
+        &self.query_schema
     }
 }

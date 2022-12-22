@@ -3,32 +3,14 @@ use crate::{
     opt::{CliOpt, PrismaOpt, Subcommand},
     PrismaResult,
 };
-use datamodel_connector::ConnectorCapabilities;
-use prisma_models::InternalDataModelBuilder;
 use query_core::{schema::QuerySchema, schema_builder};
 use serial_test::serial;
 use std::sync::Arc;
 
-pub fn get_query_schema(datamodel_string: &str) -> (QuerySchema, datamodel::dml::Datamodel) {
-    let config = datamodel::parse_configuration(datamodel_string).unwrap();
-    let dm = datamodel::parse_datamodel(datamodel_string).unwrap().subject;
-    let datasource = config.subject.datasources.first();
-
-    let capabilities = datasource
-        .map(|ds| ds.capabilities())
-        .unwrap_or_else(ConnectorCapabilities::empty);
-    let referential_integrity = datasource.map(|ds| ds.referential_integrity()).unwrap_or_default();
-
-    let internal_ref = InternalDataModelBuilder::from(&dm).build("db".to_owned());
-    let schema = schema_builder::build(
-        internal_ref,
-        false,
-        capabilities,
-        config.subject.preview_features().iter().collect(),
-        referential_integrity,
-    );
-
-    (schema, dm)
+pub fn get_query_schema(datamodel_string: &str) -> QuerySchema {
+    let dm = psl::parse_schema(datamodel_string).unwrap();
+    let internal_ref = prisma_models::convert(Arc::new(dm), "db".to_owned());
+    schema_builder::build(internal_ref, false)
 }
 
 // Tests in this file run serially because the function `get_query_schema` depends on setting an env var.
@@ -46,8 +28,8 @@ fn must_not_fail_on_missing_env_vars_in_a_datasource() {
             blogId String @id
         }
     "#;
-    let (query_schema, datamodel) = get_query_schema(dm);
-    let dmmf = request_handlers::dmmf::render_dmmf(&datamodel, Arc::new(query_schema));
+    let query_schema = get_query_schema(dm);
+    let dmmf = request_handlers::dmmf::render_dmmf(Arc::new(query_schema));
     let inputs = &dmmf.schema.input_object_types;
 
     assert!(!inputs.is_empty());
@@ -112,6 +94,7 @@ fn test_dmmf_cli_command(schema: &str) -> PrismaResult<()> {
         subcommand: Some(Subcommand::Cli(CliOpt::Dmmf)),
         enable_open_telemetry: false,
         open_telemetry_endpoint: String::new(),
+        dataproxy_metric_override: false,
     };
 
     let cli_cmd = CliCommand::from_opt(&prisma_opt)?.unwrap();

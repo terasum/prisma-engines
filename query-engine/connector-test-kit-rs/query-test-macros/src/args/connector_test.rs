@@ -28,8 +28,15 @@ pub struct ConnectorTestArgs {
     #[darling(default)]
     pub capabilities: RunOnlyForCapabilities,
 
+    // #[deprecated(since = "4.5.0", note = "Use `relation_mode` instead")]
     #[darling(default)]
-    pub referential_integrity: Option<ReferentialIntegrity>,
+    pub referential_integrity: Option<RelationMode>,
+
+    #[darling(default)]
+    pub relation_mode: Option<RelationMode>,
+
+    #[darling(default)]
+    pub db_schemas: DbSchemas,
 }
 
 impl ConnectorTestArgs {
@@ -53,12 +60,12 @@ impl ConnectorTestArgs {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub enum ReferentialIntegrity {
+pub enum RelationMode {
     ForeignKeys,
     Prisma,
 }
 
-impl darling::FromMeta for ReferentialIntegrity {
+impl darling::FromMeta for RelationMode {
     fn from_string(value: &str) -> darling::Result<Self> {
         match value.to_lowercase().as_str() {
             "prisma" => Ok(Self::Prisma),
@@ -68,11 +75,11 @@ impl darling::FromMeta for ReferentialIntegrity {
     }
 }
 
-impl ToString for ReferentialIntegrity {
+impl ToString for RelationMode {
     fn to_string(&self) -> String {
         match self {
-            ReferentialIntegrity::Prisma => "prisma".to_string(),
-            ReferentialIntegrity::ForeignKeys => "foreignKeys".to_string(),
+            Self::Prisma => "prisma".to_string(),
+            Self::ForeignKeys => "foreignKeys".to_string(),
         }
     }
 }
@@ -147,27 +154,44 @@ impl ExcludeConnectorTags {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct DbSchemas {
+    db_schemas: Vec<String>,
+}
+
+impl DbSchemas {
+    pub fn schemas(&self) -> &[String] {
+        self.db_schemas.as_ref()
+    }
+}
+
+impl darling::FromMeta for DbSchemas {
+    fn from_list(items: &[syn::NestedMeta]) -> Result<Self, darling::Error> {
+        let db_schemas = strings_to_list("DbSchemas", items)?;
+        Ok(DbSchemas { db_schemas })
+    }
+}
+
 impl darling::FromMeta for ExcludeFeatures {
     fn from_list(items: &[syn::NestedMeta]) -> Result<Self, darling::Error> {
-        let features = items
-            .iter()
-            .map(|i| match i {
-                syn::NestedMeta::Meta(m) => Err(darling::Error::unexpected_type(
-                    "Preview features can only be string literals.",
-                )
-                .with_span(&m.span())),
-                syn::NestedMeta::Lit(l) => match l {
-                    syn::Lit::Str(s) => Ok(s.value()),
-                    _ => Err(
-                        darling::Error::unexpected_type("Preview features can only be string literals.")
-                            .with_span(&l.span()),
-                    ),
-                },
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let features = strings_to_list("Preview Features", items)?;
 
         Ok(ExcludeFeatures { features })
     }
+}
+
+fn strings_to_list(name: &str, items: &[syn::NestedMeta]) -> Result<Vec<String>, darling::Error> {
+    let error = format!("{} can only be string literals.", name);
+    items
+        .iter()
+        .map(|i| match i {
+            syn::NestedMeta::Meta(m) => Err(darling::Error::unexpected_type(error.as_str()).with_span(&m.span())),
+            syn::NestedMeta::Lit(l) => match l {
+                syn::Lit::Str(s) => Ok(s.value()),
+                _ => Err(darling::Error::unexpected_type(&error).with_span(&l.span())),
+            },
+        })
+        .collect::<Result<Vec<_>, _>>()
 }
 
 impl darling::FromMeta for OnlyConnectorTags {

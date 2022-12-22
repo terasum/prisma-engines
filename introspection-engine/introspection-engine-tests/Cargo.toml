@@ -11,30 +11,21 @@ sql-migration-connector = { path = "../../migration-engine/connectors/sql-migrat
 introspection-connector = { path = "../connectors/introspection-connector" }
 introspection-core = { path = "../core" }
 sql-schema-describer = { path = "../../libs/sql-schema-describer" }
-datamodel = { path = "../../libs/datamodel/core" }
+psl.workspace = true
 test-macros = { path = "../../libs/test-macros" }
 user-facing-errors = { path = "../../libs/user-facing-errors" }
 test-setup = { path = "../../libs/test-setup" }
 
 enumflags2 = "0.7"
-pretty_assertions = "0.6.1"
+pretty_assertions = "1"
 tracing-futures = "0.2"
-tokio = { version = "1.0", features = ["macros"] }
+tokio.workspace = true
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 tracing = "0.1"
 indoc = "1"
 expect-test = "1.1.0"
 url = "2"
-
-[dependencies.barrel]
-git = "https://github.com/prisma/barrel.git"
-rev = "4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805"
-features = ["sqlite3", "mysql", "pg", "mssql"]
-
-[dependencies.quaint]
-git = "https://github.com/prisma/quaint"
-rev = "fb4fe90682b4fecb485fd0d6975dd15a3bc9616b"
-features = [
+quaint = { workspace = true, features = [
     "postgresql",
     "mysql",
     "mssql",
@@ -44,4 +35,10 @@ features = [
     "chrono",
     "bigdecimal",
     "vendored-openssl"
-]
+] }
+
+[dependencies.barrel]
+git = "https://github.com/prisma/barrel.git"
+rev = "4e84cf3d5013b4c92eb81d7ba90cd1c1c01c6805"
+features = ["sqlite3", "mysql", "pg", "mssql"]
+branch = "mssql-support"

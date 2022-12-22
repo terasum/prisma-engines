@@ -4,12 +4,11 @@ use crate::{getters::Getter, parsers::Parser, *};
 use bigdecimal::ToPrimitive;
 use indexmap::IndexMap;
 use indoc::indoc;
-use native_types::{MySqlType, NativeType};
+use psl::{builtin_connectors::MySqlType, datamodel_connector::NativeTypeInstance};
 use quaint::{
     prelude::{Queryable, ResultRow},
     Value,
 };
-use serde_json::from_str;
 use std::borrow::Cow;
 use tracing::trace;
 
@@ -63,7 +62,8 @@ impl super::SqlSchemaDescriberBackend for SqlSchemaDescriber<'_> {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn describe(&self, schema: &str) -> DescriberResult<SqlSchema> {
+    async fn describe(&self, schemas: &[&str]) -> DescriberResult<SqlSchema> {
+        let schema = schemas[0];
         let mut sql_schema = SqlSchema::default();
         let version = self.conn.version().await.ok().flatten();
         let flavour = version
@@ -86,7 +86,7 @@ impl super::SqlSchemaDescriberBackend for SqlSchemaDescriber<'_> {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn version(&self, _schema: &str) -> crate::DescriberResult<Option<String>> {
+    async fn version(&self) -> crate::DescriberResult<Option<String>> {
         Ok(self.conn.version().await?)
     }
 }
@@ -223,6 +223,7 @@ impl<'a> SqlSchemaDescriber<'a> {
 
         for row in result_set.into_iter() {
             views.push(View {
+                namespace_id: NamespaceId(0),
                 name: row.get_expect_string("view_name"),
                 definition: row.get_string("view_sql"),
             })
@@ -246,6 +247,7 @@ impl<'a> SqlSchemaDescriber<'a> {
 
         for row in rows.into_iter() {
             procedures.push(Procedure {
+                namespace_id: NamespaceId(0),
                 name: row.get_expect_string("name"),
                 definition: row.get_string("definition"),
             });
@@ -279,7 +281,7 @@ impl<'a> SqlSchemaDescriber<'a> {
 
         for name in names {
             let cloned_name = name.clone();
-            let id = sql_schema.push_table(name);
+            let id = sql_schema.push_table(name, Default::default());
             map.insert(cloned_name, id);
         }
 
@@ -309,7 +311,7 @@ impl<'a> SqlSchemaDescriber<'a> {
 
         trace!("Found db size: {:?}", size);
 
-        Ok(size as usize)
+        Ok(size)
     }
 
     async fn get_all_columns(
@@ -381,21 +383,17 @@ impl<'a> SqlSchemaDescriber<'a> {
 
             let default_value = col.get("column_default");
 
-            let (tpe, enum_option) = Self::get_column_type_and_enum(
-                &table_name,
-                &name,
+            let tpe = Self::get_column_type(
+                (&table_name, &name),
                 &data_type,
                 &full_data_type,
                 precision,
                 arity,
                 default_value,
+                sql_schema,
             );
             let extra = col.get_expect_string("extra").to_lowercase();
             let auto_increment = matches!(extra.as_str(), "auto_increment");
-
-            if let Some(enm) = enum_option {
-                sql_schema.enums.push(enm);
-            }
 
             let default = match default_value {
                 None => None,
@@ -489,10 +487,13 @@ impl<'a> SqlSchemaDescriber<'a> {
                 },
             };
 
+            let column_id = ColumnId(sql_schema.columns.len() as u32);
+            let default_value_id = default.map(|default| sql_schema.push_default_value(column_id, default));
+
             let col = Column {
                 name,
                 tpe,
-                default,
+                default_value_id,
                 auto_increment,
             };
 
@@ -516,15 +517,15 @@ impl<'a> SqlSchemaDescriber<'a> {
         }
     }
 
-    fn get_column_type_and_enum(
-        table: &str,
-        column_name: &str,
+    fn get_column_type(
+        (table, column_name): (&str, &str),
         data_type: &str,
         full_data_type: &str,
         precision: Precision,
         arity: ColumnArity,
         default: Option<&Value<'_>>,
-    ) -> (ColumnType, Option<Enum>) {
+        sql_schema: &mut SqlSchema,
+    ) -> ColumnType {
         static UNSIGNEDNESS_RE: Lazy<Regex> = Lazy::new(|| Regex::new("(?i)unsigned$").unwrap());
         let is_tinyint1 = || Self::extract_precision(full_data_type) == Some(1);
         let invalid_bool_default = || {
@@ -580,7 +581,12 @@ impl<'a> SqlSchemaDescriber<'a> {
             "tinytext" => (ColumnTypeFamily::String, Some(MySqlType::TinyText)),
             "mediumtext" => (ColumnTypeFamily::String, Some(MySqlType::MediumText)),
             "longtext" => (ColumnTypeFamily::String, Some(MySqlType::LongText)),
-            "enum" => (ColumnTypeFamily::Enum(format!("{}_{}", table, column_name)), None),
+            "enum" => {
+                let enum_name = format!("{}_{}", table, column_name);
+                let enum_id = sql_schema.push_enum(Default::default(), enum_name);
+                push_enum_variants(full_data_type, enum_id, sql_schema);
+                (ColumnTypeFamily::Enum(enum_id), None)
+            }
             "json" => (ColumnTypeFamily::Json, Some(MySqlType::Json)),
             "set" => (ColumnTypeFamily::String, None),
             //temporal
@@ -632,34 +638,18 @@ impl<'a> SqlSchemaDescriber<'a> {
             _ => (ColumnTypeFamily::Unsupported(full_data_type.into()), None),
         };
 
-        let enm = match &family {
-            ColumnTypeFamily::Enum(name) => Some(Enum {
-                name: name.clone(),
-                values: Self::extract_enum_values(&full_data_type),
-            }),
-            _ => None,
-        };
-
-        let tpe = ColumnType {
+        ColumnType {
             full_data_type: full_data_type.to_owned(),
             family,
             arity,
-            native_type: native_type.map(|x| x.to_json()),
-        };
-
-        (tpe, enm)
+            native_type: native_type.map(NativeTypeInstance::new::<MySqlType>),
+        }
     }
 
     fn extract_precision(input: &str) -> Option<u32> {
         static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#".*\(([1-9])\)"#).unwrap());
         RE.captures(input)
-            .and_then(|cap| cap.get(1).map(|precision| from_str::<u32>(precision.as_str()).unwrap()))
-    }
-
-    fn extract_enum_values(full_data_type: &&str) -> Vec<String> {
-        let len = &full_data_type.len() - 1;
-        let vals = &full_data_type[5..len];
-        vals.split(',').map(unquote_string).collect()
+            .and_then(|cap| cap.get(1).map(|precision| precision.as_str().parse::<u32>().unwrap()))
     }
 
     // See https://dev.mysql.com/doc/refman/8.0/en/string-literals.html
@@ -795,4 +785,13 @@ async fn push_foreign_keys(
     }
 
     Ok(())
+}
+
+fn push_enum_variants(full_data_type: &str, enum_id: EnumId, sql_schema: &mut SqlSchema) {
+    let len = &full_data_type.len() - 1;
+    // full_data_type for enum columns follows the pattern "enum('a','b')"
+    let vals = &full_data_type[5..len];
+    for variant in vals.split(',').map(unquote_string) {
+        sql_schema.push_enum_variant(enum_id, variant);
+    }
 }

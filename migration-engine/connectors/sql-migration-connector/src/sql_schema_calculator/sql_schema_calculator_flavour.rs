@@ -7,16 +7,11 @@ mod postgres;
 #[cfg(feature = "sqlite")]
 mod sqlite;
 
-use datamodel::{
-    parser_database::{ast::FieldArity, walkers::*},
-    ValidatedSchema,
-};
+use psl::parser_database::{ast::FieldArity, walkers::*};
 use sql_schema_describer::{self as sql, ColumnArity, ColumnType, ColumnTypeFamily};
 
 pub(crate) trait SqlSchemaCalculatorFlavour {
-    fn calculate_enums(&self, _datamodel: &ValidatedSchema) -> Vec<sql::Enum> {
-        Vec::new()
-    }
+    fn calculate_enums(&self, _ctx: &mut super::Context<'_>) {}
 
     fn column_default_value_for_autoincrement(&self) -> Option<sql::DefaultValue> {
         None
@@ -37,10 +32,6 @@ pub(crate) trait SqlSchemaCalculatorFlavour {
 
     fn default_constraint_name(&self, _default_value: DefaultValueWalker<'_>) -> Option<String> {
         None
-    }
-
-    fn enum_column_type(&self, _field: ScalarFieldWalker<'_>, _db_name: &str) -> sql::ColumnType {
-        unreachable!("unreachable enum_column_type")
     }
 
     fn field_is_implicit_autoincrement_primary_key(&self, _field: ScalarFieldWalker<'_>) -> bool {

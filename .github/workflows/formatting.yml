@@ -13,11 +13,11 @@ on:
 
 jobs:
   clippy:
-    runs-on: buildjet-16vcpu-ubuntu-2004
+    runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-Dwarnings"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - uses: actions-rs/toolchain@v1
         with:
@@ -32,7 +32,7 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -40,3 +40,9 @@ jobs:
           override: true
       - name: Check formatting
         run: cargo fmt -- --check
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master

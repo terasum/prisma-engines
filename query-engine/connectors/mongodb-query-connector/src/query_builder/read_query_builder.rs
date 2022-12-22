@@ -1,74 +1,45 @@
 use super::group_by_builder::*;
-use crate::root_queries::metrics;
+
 use crate::{
+    constants::*,
     cursor::{CursorBuilder, CursorData},
-    filter::{convert_filter, FilterPrefix},
+    filter::{FilterPrefix, MongoFilterVisitor},
     join::JoinStage,
-    logger::log_read_query as log_query,
     orderby::OrderByBuilder,
+    query_strings::Aggregate,
+    root_queries::observing,
     vacuum_cursor, BsonTransform, IntoBson,
 };
 use connector_interface::{AggregationSelection, Filter, QueryArguments, RelAggregationSelection};
 use itertools::Itertools;
 use mongodb::{
     bson::{doc, Document},
-    options::{AggregateOptions, FindOptions},
+    options::AggregateOptions,
     ClientSession, Collection,
 };
 use prisma_models::{FieldSelection, ModelRef, ScalarFieldRef};
 use std::convert::TryFrom;
 
-/// Ergonomics wrapper for query execution and logging.
-/// Todo: Add all other queries gradually.
-#[allow(dead_code, clippy::large_enum_variant)]
-pub enum MongoReadQuery {
-    Find(FindQuery),
-    Pipeline(PipelineQuery),
-}
-
-impl MongoReadQuery {
-    pub async fn execute(
-        self,
-        on_collection: Collection<Document>,
-        with_session: &mut ClientSession,
-    ) -> crate::Result<Vec<Document>> {
-        log_query(on_collection.name(), &self);
-        match self {
-            MongoReadQuery::Find(q) => q.execute(on_collection, with_session).await,
-            MongoReadQuery::Pipeline(q) => q.execute(on_collection, with_session).await,
-        }
-    }
-}
-
-pub struct PipelineQuery {
+// Mongo Driver broke usage of the simple API, can't be used by us anymore.
+// As such the read query will always be based on aggregation pipeline
+// such pipeline will have different stages. See
+// https://www.mongodb.com/docs/manual/core/aggregation-pipeline/
+pub struct ReadQuery {
     pub(crate) stages: Vec<Document>,
 }
 
-impl PipelineQuery {
+impl ReadQuery {
     pub async fn execute(
         self,
         on_collection: Collection<Document>,
         with_session: &mut ClientSession,
     ) -> crate::Result<Vec<Document>> {
         let opts = AggregateOptions::builder().allow_disk_use(true).build();
-        let cursor = metrics(|| on_collection.aggregate_with_session(self.stages, opts, with_session)).await?;
-
-        vacuum_cursor(cursor, with_session).await
-    }
-}
-
-pub struct FindQuery {
-    pub(crate) filter: Option<Document>,
-    pub(crate) options: FindOptions,
-}
-
-impl FindQuery {
-    pub async fn execute(
-        self,
-        on_collection: Collection<Document>,
-        with_session: &mut ClientSession,
-    ) -> crate::Result<Vec<Document>> {
-        let cursor = metrics(|| on_collection.find_with_session(self.filter, self.options, with_session)).await?;
+        let query_string_builder = Aggregate::new(&self.stages, on_collection.name());
+        let cursor = observing(Some(&query_string_builder), || {
+            on_collection.aggregate_with_session(self.stages.clone(), opts, with_session)
+        })
+        .await?;
 
         vacuum_cursor(cursor, with_session).await
     }
@@ -165,7 +136,9 @@ impl MongoReadQueryBuilder {
         let query = match args.filter {
             Some(filter) => {
                 // If a filter comes with joins, it needs to be run _after_ the initial filter query / $matches.
-                let (filter, filter_joins) = convert_filter(filter, false, FilterPrefix::default())?.render();
+                let (filter, filter_joins) = MongoFilterVisitor::new(FilterPrefix::default(), false)
+                    .visit(filter)?
+                    .render();
                 if !filter_joins.is_empty() {
                     joins.extend(filter_joins);
                     post_filters.push(filter);
@@ -199,57 +172,21 @@ impl MongoReadQueryBuilder {
     }
 
     /// Finalizes the builder and builds a `MongoQuery`.
-    pub(crate) fn build(mut self) -> crate::Result<MongoReadQuery> {
+    pub(crate) fn build(mut self) -> crate::Result<ReadQuery> {
         self.finalize()?;
-
-        // Depending on the builder contents, either an
-        // aggregation pipeline or a plain query is build.
-        // if self.joins.is_empty()
-        //     && self.order_joins.is_empty()
-        //     && self.aggregations.is_empty()
-        //     && self.cursor_data.is_none()
-        // {
-        //     Ok(self.build_find_query())
-        // } else {
-        // }
-
         Ok(self.build_pipeline_query())
-    }
-
-    /// Note: Mongo Driver broke usage of the simple API, can't be used by us anymore. Always doing aggr. pipeline for now.
-    /// Simplest form of find-documents query: `coll.find(filter, opts)`.
-    #[allow(dead_code)]
-    fn build_find_query(self) -> MongoReadQuery {
-        // let options = FindOptions::builder()
-        //     .projection(self.projection)
-        //     .limit(self.limit)
-        //     .skip(self.skip)
-        //     .sort(self.order)
-        //     .build();
-
-        // MongoReadQuery::Find(FindQuery {
-        //     filter: self.query,
-        //     options,
-        // })
-
-        unreachable!()
     }
 
     /// Aggregation-pipeline based query. A distinction must be made between cursored and uncursored queries,
     /// as they require different stage shapes (see individual fns for details).
-    fn build_pipeline_query(self) -> MongoReadQuery {
+    fn build_pipeline_query(self) -> ReadQuery {
         let stages = if self.cursor_data.is_none() {
-            self.flat_pipeline_stages()
+            self.into_pipeline_stages()
         } else {
             self.cursored_pipeline_stages()
         };
 
-        MongoReadQuery::Pipeline(PipelineQuery { stages })
-    }
-
-    /// Pipeline not requiring a cursor. Flat `coll.aggregate(stages, opts)` query.
-    fn flat_pipeline_stages(self) -> Vec<Document> {
-        self.into_pipeline_stages()
+        ReadQuery { stages }
     }
 
     fn into_pipeline_stages(self) -> Vec<Document> {
@@ -424,12 +361,21 @@ impl MongoReadQueryBuilder {
     ) -> crate::Result<Self> {
         for aggr in aggregation_selections {
             let join = match aggr {
-                RelAggregationSelection::Count(rf) => JoinStage {
-                    source: rf.clone(),
-                    alias: Some(aggr.db_alias()),
-                    nested: vec![],
-                },
+                RelAggregationSelection::Count(rf, filter) => {
+                    let filter = filter
+                        .as_ref()
+                        .map(|f| MongoFilterVisitor::new(FilterPrefix::default(), false).visit(f.clone()))
+                        .transpose()?;
+
+                    JoinStage {
+                        source: rf.clone(),
+                        alias: Some(aggr.db_alias()),
+                        nested: vec![],
+                        filter,
+                    }
+                }
             };
+
             let projection = doc! {
               aggr.db_alias(): { "$size": format!("${}", aggr.db_alias()) }
             };
@@ -462,11 +408,11 @@ impl MongoReadQueryBuilder {
             group_by.with_having_filter(&having);
 
             // Having filters can only appear in group by queries.
-            // All group by fields go into the "_id" key of the result document.
+            // All group by fields go into the UNDERSCORE_ID key of the result document.
             // As it is the only place where the flat scalars are contained for the group,
             // we need to refer to that object.
-            let prefix = FilterPrefix::from("_id");
-            let (filter_doc, _) = convert_filter(having, false, prefix)?.render();
+            let prefix = FilterPrefix::from(group_by::UNDERSCORE_ID);
+            let (filter_doc, _) = MongoFilterVisitor::new(prefix, false).visit(having)?.render();
 
             self.aggregation_filters.push(filter_doc);
         }

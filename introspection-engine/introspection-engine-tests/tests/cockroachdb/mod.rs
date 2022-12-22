@@ -1,6 +1,5 @@
 mod gin;
 
-use datamodel::parse_configuration;
 use indoc::indoc;
 use introspection_connector::{CompositeTypeDepth, IntrospectionConnector, IntrospectionContext};
 use introspection_engine_tests::test_api::*;
@@ -27,22 +26,9 @@ async fn introspecting_cockroach_db_with_postgres_provider(api: TestApi) {
 
     api.raw_cmd(setup).await;
 
-    let ctx = IntrospectionContext {
-        preview_features: Default::default(),
-        source: parse_configuration(&schema)
-            .unwrap()
-            .subject
-            .datasources
-            .into_iter()
-            .next()
-            .unwrap(),
-        composite_type_depth: CompositeTypeDepth::Infinite,
-    };
-
-    api.api
-        .introspect(&datamodel::parse_datamodel(&schema).unwrap().subject, ctx)
-        .await
-        .unwrap();
+    let schema = psl::parse_schema(schema).unwrap();
+    let ctx = IntrospectionContext::new_config_only(schema, CompositeTypeDepth::Infinite);
+    api.api.introspect(&ctx).await.unwrap();
 }
 
 #[test_connector(tags(CockroachDb))]

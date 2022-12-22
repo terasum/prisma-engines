@@ -55,6 +55,7 @@ pub fn test_connector(attr: TokenStream, input: TokenStream) -> TokenStream {
     let exclude_tagged = &attrs.exclude_tagged;
     let capabilities = &attrs.capabilities;
     let preview_features = &attrs.preview_features;
+    let namespaces = &attrs.namespaces;
 
     let test_function_name = &sig.ident;
     let test_function_name_lit = sig.ident.to_string();
@@ -74,7 +75,7 @@ pub fn test_connector(attr: TokenStream, input: TokenStream) -> TokenStream {
             #[test]
             #ignore_attr
             fn #test_function_name() {
-                let args = test_setup::TestApiArgs::new(#test_function_name_lit, &[#(#preview_features,)*]);
+                let args = test_setup::TestApiArgs::new(#test_function_name_lit, &[#(#preview_features,)*], &[#(#namespaces,)*]);
 
                 if test_setup::should_skip_test(
                     BitFlags::empty() #(| Tags::#include_tagged)*,
@@ -82,7 +83,7 @@ pub fn test_connector(attr: TokenStream, input: TokenStream) -> TokenStream {
                     BitFlags::empty() #(| Capabilities::#capabilities)*,
                 ) { return }
 
-                test_setup::runtime::run_with_tokio::<#return_ty, _>(async {
+                test_setup::runtime::run_with_thread_local_runtime::<#return_ty>(async {
                     let #arg_name = &#arg_type::new(args).await;
 
                     #body
@@ -95,7 +96,7 @@ pub fn test_connector(attr: TokenStream, input: TokenStream) -> TokenStream {
             #[test]
             #ignore_attr
             fn #test_function_name() {
-                let args = test_setup::TestApiArgs::new(#test_function_name_lit, &[#(#preview_features,)*]);
+                let args = test_setup::TestApiArgs::new(#test_function_name_lit, &[#(#preview_features,)*], &[#(#namespaces,)*]);
 
                 if test_setup::should_skip_test(
                     BitFlags::empty() #(| Tags::#include_tagged)*,
@@ -120,6 +121,7 @@ struct TestConnectorAttrs {
     exclude_tagged: Vec<syn::Path>,
     capabilities: Vec<syn::Path>,
     preview_features: Vec<syn::LitStr>,
+    namespaces: Vec<syn::LitStr>,
     ignore_reason: Option<LitStr>,
 }
 
@@ -135,6 +137,18 @@ impl TestConnectorAttrs {
                 for item in list.nested {
                     match item {
                         NestedMeta::Lit(Lit::Str(s)) => self.preview_features.push(s),
+                        other => return Err(syn::Error::new_spanned(other, "Unexpected argument")),
+                    }
+                }
+
+                return Ok(());
+            }
+            p if p.is_ident("namespaces") => {
+                self.namespaces.reserve(list.nested.len());
+
+                for item in list.nested {
+                    match item {
+                        NestedMeta::Lit(Lit::Str(s)) => self.namespaces.push(s),
                         other => return Err(syn::Error::new_spanned(other, "Unexpected argument")),
                     }
                 }
@@ -165,7 +179,7 @@ fn extract_api_arg(sig: &Signature) -> Result<(&syn::Ident, &syn::Ident), syn::E
     let err = |span| {
         Err(syn::Error::new(
             span,
-            &format!(
+            format!(
                 "Unsupported syntax. Arguments to test functions should be of the form `fn test_fn(api: {}TestApi)`",
                 if sig.asyncness.is_some() { "&" } else { "" }
             ),
@@ -194,7 +208,7 @@ fn extract_api_arg(sig: &Signature) -> Result<(&syn::Ident, &syn::Ident), syn::E
         }
         (_, n) => Err(syn::Error::new_spanned(
             &sig.inputs,
-            &format!("Test functions should take one argument, not {}", n),
+            format!("Test functions should take one argument, not {}", n),
         )),
     }
 }

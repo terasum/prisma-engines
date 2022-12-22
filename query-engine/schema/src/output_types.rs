@@ -187,4 +187,16 @@ impl OutputField {
 
         self
     }
+
+    pub fn model(&self) -> Option<&ModelRef> {
+        self.query_info.as_ref().and_then(|info| info.model.as_ref())
+    }
+
+    pub fn is_find_unique(&self) -> bool {
+        matches!(self.query_tag(), Some(&QueryTag::FindUnique))
+    }
+
+    fn query_tag(&self) -> Option<&QueryTag> {
+        self.query_info.as_ref().map(|info| &info.tag)
+    }
 }

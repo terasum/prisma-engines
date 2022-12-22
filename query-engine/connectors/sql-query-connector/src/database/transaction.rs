@@ -1,12 +1,11 @@
 use super::catch;
-use crate::{database::operations::*, sql_info::SqlInfo, SqlError};
+use crate::{database::operations::*, operations::upsert::native_upsert, sql_info::SqlInfo, SqlError};
 use async_trait::async_trait;
 use connector::{ConnectionLike, RelAggregationSelection};
 use connector_interface::{
     self as connector, filter::Filter, AggregationRow, AggregationSelection, QueryArguments, ReadOperations,
     RecordFilter, Transaction, WriteArgs, WriteOperations,
 };
-use datamodel::common::preview_features::PreviewFeature;
 use prisma_models::{prelude::*, SelectionResult};
 use prisma_value::PrismaValue;
 use quaint::prelude::ConnectionInfo;
@@ -15,14 +14,14 @@ use std::collections::HashMap;
 pub struct SqlConnectorTransaction<'tx> {
     inner: quaint::connector::Transaction<'tx>,
     connection_info: ConnectionInfo,
-    features: Vec<PreviewFeature>,
+    features: psl::PreviewFeatures,
 }
 
 impl<'tx> SqlConnectorTransaction<'tx> {
     pub fn new(
         tx: quaint::connector::Transaction<'tx>,
         connection_info: &ConnectionInfo,
-        features: Vec<PreviewFeature>,
+        features: psl::PreviewFeatures,
     ) -> Self {
         let connection_info = connection_info.clone();
 
@@ -49,10 +48,9 @@ impl<'tx> Transaction for SqlConnectorTransaction<'tx> {
         catch(self.connection_info.clone(), async move {
             let res = self.inner.rollback().await.map_err(SqlError::from);
 
-            if matches!(res, Err(SqlError::TransactionAlreadyClosed(_))) {
-                Ok(())
-            } else {
-                res
+            match res {
+                Err(SqlError::TransactionAlreadyClosed(_)) | Err(SqlError::RollbackWithoutBegin) => Ok(()),
+                _ => res,
             }
         })
         .await
@@ -188,9 +186,23 @@ impl<'tx> WriteOperations for SqlConnectorTransaction<'tx> {
         record_filter: RecordFilter,
         args: WriteArgs,
         trace_id: Option<String>,
-    ) -> connector::Result<Vec<SelectionResult>> {
+    ) -> connector::Result<usize> {
         catch(self.connection_info.clone(), async move {
             write::update_records(&self.inner, model, record_filter, args, trace_id).await
+        })
+        .await
+    }
+
+    async fn update_record(
+        &mut self,
+        model: &ModelRef,
+        record_filter: RecordFilter,
+        args: WriteArgs,
+        trace_id: Option<String>,
+    ) -> connector::Result<Option<SelectionResult>> {
+        catch(self.connection_info.clone(), async move {
+            let mut res = write::update_record(&self.inner, model, record_filter, args, trace_id).await?;
+            Ok(res.pop())
         })
         .await
     }
@@ -203,6 +215,17 @@ impl<'tx> WriteOperations for SqlConnectorTransaction<'tx> {
     ) -> connector::Result<usize> {
         catch(self.connection_info.clone(), async move {
             write::delete_records(&self.inner, model, record_filter, trace_id).await
+        })
+        .await
+    }
+
+    async fn native_upsert_record(
+        &mut self,
+        upsert: connector_interface::NativeUpsert,
+        trace_id: Option<String>,
+    ) -> connector::Result<SingleRecord> {
+        catch(self.connection_info.clone(), async move {
+            native_upsert(&self.inner, upsert, trace_id).await
         })
         .await
     }
@@ -234,7 +257,7 @@ impl<'tx> WriteOperations for SqlConnectorTransaction<'tx> {
 
     async fn execute_raw(&mut self, inputs: HashMap<String, PrismaValue>) -> connector::Result<usize> {
         catch(self.connection_info.clone(), async move {
-            write::execute_raw(&self.inner, &self.features, inputs).await
+            write::execute_raw(&self.inner, self.features, inputs).await
         })
         .await
     }
@@ -246,13 +269,7 @@ impl<'tx> WriteOperations for SqlConnectorTransaction<'tx> {
         _query_type: Option<String>,
     ) -> connector::Result<serde_json::Value> {
         catch(self.connection_info.clone(), async move {
-            write::query_raw(
-                &self.inner,
-                SqlInfo::from(&self.connection_info),
-                &self.features,
-                inputs,
-            )
-            .await
+            write::query_raw(&self.inner, SqlInfo::from(&self.connection_info), self.features, inputs).await
         })
         .await
     }

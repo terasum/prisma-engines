@@ -186,7 +186,7 @@ mod raw_mongo {
           run_command_raw(
             json!({ "insert": "TestModel", "documents": [{ "_id": 2, "field": "B" }, { "_id": 3, "field": "C" }] }),
           )
-        ], false).await?.to_string();
+        ], false, None).await?.to_string();
 
         insta::assert_snapshot!(
           res,
@@ -241,8 +241,8 @@ mod raw_mongo {
             (q, o) => {
                 format!(
                     r#"query {{ findTestModelRaw({} {}) }}"#,
-                    q.unwrap_or_else(|| "".to_string()),
-                    o.unwrap_or_else(|| "".to_string())
+                    q.unwrap_or_default(),
+                    o.unwrap_or_default()
                 )
             }
         }
@@ -262,8 +262,8 @@ mod raw_mongo {
             (p, o) => {
                 format!(
                     r#"query {{ aggregateTestModelRaw({} {}) }}"#,
-                    p.unwrap_or_else(|| "".to_string()),
-                    o.unwrap_or_else(|| "".to_string())
+                    p.unwrap_or_default(),
+                    o.unwrap_or_default()
                 )
             }
         }

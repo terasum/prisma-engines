@@ -4,7 +4,6 @@ pub use quaint::{prelude::Queryable, single::Quaint};
 pub use test_macros::test_connector;
 pub use test_setup::{runtime::run_with_thread_local_runtime as tok, BitFlags, Capabilities, Tags};
 
-use barrel::Migration;
 use quaint::prelude::SqlFamily;
 use sql_schema_describer::{
     postgres::Circumstances,
@@ -68,18 +67,18 @@ impl TestApi {
     }
 
     pub(crate) fn describe(&self) -> SqlSchema {
-        self.describe_with_schema(self.schema_name())
+        self.describe_with_schemas(&[self.schema_name()])
     }
 
-    pub(crate) fn describe_with_schema(&self, schema: &str) -> SqlSchema {
-        tok(self.describe_impl(schema)).unwrap()
+    pub(crate) fn describe_with_schemas(&self, schemas: &[&str]) -> SqlSchema {
+        tok(self.describe_impl(schemas)).unwrap()
     }
 
     pub(crate) fn describe_error(&self) -> DescriberError {
-        tok(self.describe_impl(self.schema_name())).unwrap_err()
+        tok(self.describe_impl(&[self.schema_name()])).unwrap_err()
     }
 
-    async fn describe_impl(&self, schema: &str) -> Result<SqlSchema, DescriberError> {
+    async fn describe_impl(&self, schemas: &[&str]) -> Result<SqlSchema, DescriberError> {
         match self.sql_family() {
             SqlFamily::Postgres => {
                 sql_schema_describer::postgres::SqlSchemaDescriber::new(
@@ -90,7 +89,7 @@ impl TestApi {
                         Default::default()
                     },
                 )
-                .describe(schema)
+                .describe(schemas)
                 .await
             }
             SqlFamily::Sqlite => {
@@ -100,12 +99,12 @@ impl TestApi {
             }
             SqlFamily::Mysql => {
                 sql_schema_describer::mysql::SqlSchemaDescriber::new(&self.database)
-                    .describe(schema)
+                    .describe(schemas)
                     .await
             }
             SqlFamily::Mssql => {
                 sql_schema_describer::mssql::SqlSchemaDescriber::new(&self.database)
-                    .describe(schema)
+                    .describe(schemas)
                     .await
             }
         }
@@ -117,19 +116,6 @@ impl TestApi {
 
     pub(crate) fn database(&self) -> &Quaint {
         &self.database
-    }
-
-    pub(crate) fn execute_barrel(&self, migration_fn: impl FnOnce(&mut Migration)) {
-        let mut migration = Migration::new().schema(self.schema_name());
-        migration_fn(&mut migration);
-
-        let full_sql = migration.make_from(match self.sql_family() {
-            SqlFamily::Mysql => barrel::SqlVariant::Mysql,
-            SqlFamily::Postgres => barrel::SqlVariant::Pg,
-            SqlFamily::Sqlite => barrel::SqlVariant::Sqlite,
-            SqlFamily::Mssql => barrel::SqlVariant::Mssql,
-        });
-        tok(self.database.raw_cmd(&full_sql)).unwrap();
     }
 
     pub(crate) fn schema_name(&self) -> &str {
@@ -152,6 +138,10 @@ pub trait SqlSchemaAssertionsExt {
         table_name: &str,
         assertions: impl for<'a> FnOnce(&'a TableAssertion<'a>) -> &'a TableAssertion<'a>,
     ) -> &Self;
+
+    fn assert_namespace(&self, namespace_name: &str) -> &Self;
+
+    fn assert_not_namespace(&self, namespace_name: &str) -> &Self;
 }
 
 impl SqlSchemaAssertionsExt for SqlSchema {
@@ -166,6 +156,19 @@ impl SqlSchemaAssertionsExt for SqlSchema {
 
         assertions(&mut table);
 
+        self
+    }
+
+    fn assert_namespace(&self, namespace_name: &str) -> &Self {
+        self.namespace_walker(namespace_name)
+            .or_else(|| panic!("Could not find namespace '{namespace_name}'"));
+        self
+    }
+
+    fn assert_not_namespace(&self, namespace_name: &str) -> &Self {
+        self.walk_namespaces()
+            .find(|ns| ns.name() == namespace_name)
+            .and_then::<(), _>(|_x| panic!("Found unexpected namespace '{namespace_name}'"));
         self
     }
 }
@@ -274,16 +277,6 @@ impl ColumnAssertion<'_> {
 
     pub fn assert_is_list(&self) -> &Self {
         assert!(self.column.arity().is_list());
-        self
-    }
-
-    pub fn assert_not_null(&self) -> &Self {
-        assert!(self.column.arity().is_required());
-        self
-    }
-
-    pub fn assert_nullable(&self) -> &Self {
-        assert!(self.column.arity().is_nullable());
         self
     }
 

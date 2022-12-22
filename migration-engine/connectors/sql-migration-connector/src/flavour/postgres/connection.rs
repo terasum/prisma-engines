@@ -1,12 +1,13 @@
 //! All the quaint-wrangling for the postgres connector should happen here.
 
 use enumflags2::BitFlags;
-use migration_connector::{ConnectorError, ConnectorResult};
+use migration_connector::{ConnectorError, ConnectorResult, Namespaces};
+use psl::PreviewFeature;
 use quaint::{
     connector::{self, tokio_postgres::error::ErrorPosition, PostgresUrl},
     prelude::{ConnectionInfo, Queryable},
 };
-use sql_schema_describer::SqlSchema;
+use sql_schema_describer::{postgres::PostgresSchemaExt, SqlSchema};
 use user_facing_errors::{introspection_engine::DatabaseSchemaInconsistent, migration_engine::ApplyMigrationError};
 
 use crate::sql_renderer::IteratorJoin;
@@ -32,15 +33,20 @@ impl Connection {
         &mut self,
         circumstances: BitFlags<super::Circumstances>,
         params: &super::Params,
+        namespaces: Option<Namespaces>,
     ) -> ConnectorResult<SqlSchema> {
         use sql_schema_describer::{postgres as describer, DescriberErrorKind, SqlSchemaDescriberBackend};
         let mut describer_circumstances: BitFlags<describer::Circumstances> = Default::default();
+
         if circumstances.contains(super::Circumstances::IsCockroachDb) {
             describer_circumstances |= describer::Circumstances::Cockroach;
         }
 
+        let namespaces_vec = Namespaces::to_vec(namespaces, String::from(params.url.schema()));
+        let namespaces_str: Vec<&str> = namespaces_vec.iter().map(AsRef::as_ref).collect();
+
         let mut schema = sql_schema_describer::postgres::SqlSchemaDescriber::new(&self.0, describer_circumstances)
-            .describe(params.url.schema())
+            .describe(namespaces_str.as_slice())
             .await
             .map_err(|err| match err.into_kind() {
                 DescriberErrorKind::QuaintError(err) => quaint_err(&params.url)(err),
@@ -53,6 +59,7 @@ impl Connection {
             })?;
 
         crate::flavour::normalize_sql_schema(&mut schema, params.connector_params.preview_features);
+        normalize_sql_schema(&mut schema, params.connector_params.preview_features);
 
         Ok(schema)
     }
@@ -160,6 +167,13 @@ impl Connection {
                 }))
             }
         }
+    }
+}
+
+fn normalize_sql_schema(schema: &mut SqlSchema, preview_features: BitFlags<PreviewFeature>) {
+    if !preview_features.contains(PreviewFeature::PostgresqlExtensions) {
+        let pg_ext: &mut PostgresSchemaExt = schema.downcast_connector_data_mut();
+        pg_ext.clear_extensions();
     }
 }
 

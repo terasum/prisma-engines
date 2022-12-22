@@ -1,12 +1,11 @@
 use super::{catch, transaction::SqlConnectorTransaction};
-use crate::{database::operations::*, sql_info::SqlInfo, QueryExt, SqlError};
+use crate::{database::operations::*, operations::upsert::native_upsert, sql_info::SqlInfo, QueryExt, SqlError};
 use async_trait::async_trait;
 use connector::{ConnectionLike, RelAggregationSelection};
 use connector_interface::{
     self as connector, filter::Filter, AggregationRow, AggregationSelection, Connection, QueryArguments,
     ReadOperations, RecordFilter, Transaction, WriteArgs, WriteOperations,
 };
-use datamodel::common::preview_features::PreviewFeature;
 use prisma_models::{prelude::*, SelectionResult};
 use prisma_value::PrismaValue;
 use quaint::{
@@ -18,14 +17,14 @@ use std::{collections::HashMap, str::FromStr};
 pub struct SqlConnection<C> {
     inner: C,
     connection_info: ConnectionInfo,
-    features: Vec<PreviewFeature>,
+    features: psl::PreviewFeatures,
 }
 
 impl<C> SqlConnection<C>
 where
     C: QueryExt + Send + Sync + 'static,
 {
-    pub fn new(inner: C, connection_info: &ConnectionInfo, features: Vec<PreviewFeature>) -> Self {
+    pub fn new(inner: C, connection_info: &ConnectionInfo, features: psl::PreviewFeatures) -> Self {
         let connection_info = connection_info.clone();
 
         Self {
@@ -48,7 +47,7 @@ where
         isolation_level: Option<String>,
     ) -> connector::Result<Box<dyn Transaction + 'a>> {
         let connection_info = &self.connection_info;
-        let features = self.features.clone();
+        let features = self.features;
         let isolation_level = match isolation_level {
             Some(level) => {
                 let transformed = IsolationLevel::from_str(&level)
@@ -207,9 +206,23 @@ where
         record_filter: RecordFilter,
         args: WriteArgs,
         trace_id: Option<String>,
-    ) -> connector::Result<Vec<SelectionResult>> {
+    ) -> connector::Result<usize> {
         catch(self.connection_info.clone(), async move {
             write::update_records(&self.inner, model, record_filter, args, trace_id).await
+        })
+        .await
+    }
+
+    async fn update_record(
+        &mut self,
+        model: &ModelRef,
+        record_filter: RecordFilter,
+        args: WriteArgs,
+        trace_id: Option<String>,
+    ) -> connector::Result<Option<SelectionResult>> {
+        catch(self.connection_info.clone(), async move {
+            let mut res = write::update_record(&self.inner, model, record_filter, args, trace_id).await?;
+            Ok(res.pop())
         })
         .await
     }
@@ -222,6 +235,17 @@ where
     ) -> connector::Result<usize> {
         catch(self.connection_info.clone(), async move {
             write::delete_records(&self.inner, model, record_filter, trace_id).await
+        })
+        .await
+    }
+
+    async fn native_upsert_record(
+        &mut self,
+        upsert: connector_interface::NativeUpsert,
+        trace_id: Option<String>,
+    ) -> connector::Result<SingleRecord> {
+        catch(self.connection_info.clone(), async move {
+            native_upsert(&self.inner, upsert, trace_id).await
         })
         .await
     }
@@ -253,7 +277,7 @@ where
 
     async fn execute_raw(&mut self, inputs: HashMap<String, PrismaValue>) -> connector::Result<usize> {
         catch(self.connection_info.clone(), async move {
-            write::execute_raw(&self.inner, &self.features, inputs).await
+            write::execute_raw(&self.inner, self.features, inputs).await
         })
         .await
     }
@@ -265,13 +289,7 @@ where
         _query_type: Option<String>,
     ) -> connector::Result<serde_json::Value> {
         catch(self.connection_info.clone(), async move {
-            write::query_raw(
-                &self.inner,
-                SqlInfo::from(&self.connection_info),
-                &self.features,
-                inputs,
-            )
-            .await
+            write::query_raw(&self.inner, SqlInfo::from(&self.connection_info), self.features, inputs).await
         })
         .await
     }

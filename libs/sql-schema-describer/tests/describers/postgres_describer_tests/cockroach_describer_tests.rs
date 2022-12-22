@@ -1,5 +1,5 @@
 use crate::test_api::*;
-use prisma_value::PrismaValue;
+use psl::dml::PrismaValue;
 use sql_schema_describer::{postgres::PostgresSchemaExt, ColumnTypeFamily};
 
 #[test_connector(tags(CockroachDb))]
@@ -123,10 +123,6 @@ fn all_cockroach_column_types_must_work(api: TestApi) {
             c.assert_full_data_type("float8")
                 .assert_column_type_family(ColumnTypeFamily::Float)
         })
-        .assert_column("enum_col", |c| {
-            c.assert_full_data_type("mood")
-                .assert_column_type_family(ColumnTypeFamily::Enum("mood".into()))
-        })
         .assert_column("float_col", |c| {
             c.assert_full_data_type("float8")
                 .assert_column_type_family(ColumnTypeFamily::Float)
@@ -232,12 +228,19 @@ fn multi_field_indexes_must_be_inferred_in_the_right_order(api: TestApi) {
     api.raw_cmd(&schema);
     let expectation = expect![[r#"
         SqlSchema {
+            namespaces: [
+                "prisma-tests",
+            ],
             tables: [
                 Table {
+                    namespace_id: NamespaceId(
+                        0,
+                    ),
                     name: "indexes_test",
                 },
             ],
             enums: [],
+            enum_variants: [],
             columns: [
                 (
                     TableId(
@@ -250,12 +253,10 @@ fn multi_field_indexes_must_be_inferred_in_the_right_order(api: TestApi) {
                             family: String,
                             arity: Required,
                             native_type: Some(
-                                Object({
-                                    "String": Null,
-                                }),
+                                NativeTypeInstance(..),
                             ),
                         },
-                        default: None,
+                        default_value_id: None,
                         auto_increment: false,
                     },
                 ),
@@ -270,12 +271,10 @@ fn multi_field_indexes_must_be_inferred_in_the_right_order(api: TestApi) {
                             family: String,
                             arity: Required,
                             native_type: Some(
-                                Object({
-                                    "String": Null,
-                                }),
+                                NativeTypeInstance(..),
                             ),
                         },
-                        default: None,
+                        default_value_id: None,
                         auto_increment: false,
                     },
                 ),
@@ -290,17 +289,16 @@ fn multi_field_indexes_must_be_inferred_in_the_right_order(api: TestApi) {
                             family: Int,
                             arity: Required,
                             native_type: Some(
-                                String(
-                                    "Int4",
-                                ),
+                                NativeTypeInstance(..),
                             ),
                         },
-                        default: None,
+                        default_value_id: None,
                         auto_increment: false,
                     },
                 ),
             ],
             foreign_keys: [],
+            default_values: [],
             foreign_key_columns: [],
             indexes: [
                 Index {
@@ -449,6 +447,9 @@ fn cockroachdb_sequences_must_work(api: TestApi) {
             indexes: [],
             sequences: [
                 Sequence {
+                    namespace_id: NamespaceId(
+                        0,
+                    ),
                     name: "test",
                     start_value: 1,
                     min_value: 1,
@@ -459,6 +460,9 @@ fn cockroachdb_sequences_must_work(api: TestApi) {
                     virtual: false,
                 },
                 Sequence {
+                    namespace_id: NamespaceId(
+                        0,
+                    ),
                     name: "testmore",
                     start_value: 20,
                     min_value: 10,
@@ -469,6 +473,9 @@ fn cockroachdb_sequences_must_work(api: TestApi) {
                     virtual: false,
                 },
                 Sequence {
+                    namespace_id: NamespaceId(
+                        0,
+                    ),
                     name: "testnotcycling",
                     start_value: 1,
                     min_value: 1,
@@ -479,6 +486,7 @@ fn cockroachdb_sequences_must_work(api: TestApi) {
                     virtual: false,
                 },
             ],
+            extensions: [],
         }
     "#]];
     expected_ext.assert_debug_eq(&ext);

@@ -1,15 +1,16 @@
 #![allow(clippy::vec_init_then_push, clippy::branches_sharing_code, clippy::needless_borrow)]
 
+mod constants;
 mod cursor;
 mod error;
 mod filter;
 mod interface;
 mod join;
-mod logger;
 mod orderby;
 mod output_meta;
 mod projection;
 mod query_builder;
+mod query_strings;
 mod root_queries;
 mod value;
 

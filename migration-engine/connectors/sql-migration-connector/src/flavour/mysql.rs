@@ -3,13 +3,13 @@ mod shadow_db;
 
 use self::connection::*;
 use crate::{error::SystemDatabase, flavour::SqlFlavour};
-use datamodel::{parser_database::ScalarType, ValidatedSchema};
 use enumflags2::BitFlags;
 use indoc::indoc;
 use migration_connector::{
-    migrations_directory::MigrationDirectory, BoxFuture, ConnectorError, ConnectorParams, ConnectorResult,
+    migrations_directory::MigrationDirectory, BoxFuture, ConnectorError, ConnectorParams, ConnectorResult, Namespaces,
 };
 use once_cell::sync::Lazy;
+use psl::{datamodel_connector, parser_database::ScalarType, ValidatedSchema};
 use quaint::connector::MysqlUrl;
 use regex::{Regex, RegexSet};
 use sql_schema_describer::SqlSchema;
@@ -87,11 +87,11 @@ impl SqlFlavour for MysqlFlavour {
         "mysql"
     }
 
-    fn datamodel_connector(&self) -> &'static dyn datamodel::datamodel_connector::Connector {
-        datamodel::builtin_connectors::MYSQL
+    fn datamodel_connector(&self) -> &'static dyn datamodel_connector::Connector {
+        psl::builtin_connectors::MYSQL
     }
 
-    fn describe_schema(&mut self) -> BoxFuture<'_, ConnectorResult<SqlSchema>> {
+    fn describe_schema(&mut self, _namespaces: Option<Namespaces>) -> BoxFuture<'_, ConnectorResult<SqlSchema>> {
         with_connection(&mut self.state, |params, _c, connection| async move {
             connection.describe_schema(params).await
         })
@@ -136,6 +136,21 @@ impl SqlFlavour for MysqlFlavour {
             })
         } else {
             None
+        }
+    }
+
+    fn check_schema_features(&self, schema: &psl::ValidatedSchema) -> ConnectorResult<()> {
+        let has_namespaces = schema
+            .configuration
+            .datasources
+            .first()
+            .map(|ds| !ds.namespaces.is_empty());
+        if let Some(true) = has_namespaces {
+            Err(ConnectorError::from_msg(
+                "multiSchema migrations and introspection are not implemented on MySQL yet".to_owned(),
+            ))
+        } else {
+            Ok(())
         }
     }
 
@@ -231,7 +246,7 @@ impl SqlFlavour for MysqlFlavour {
         })
     }
 
-    fn reset(&mut self) -> BoxFuture<'_, ConnectorResult<()>> {
+    fn reset(&mut self, _namespaces: Option<Namespaces>) -> BoxFuture<'_, ConnectorResult<()>> {
         with_connection(&mut self.state, move |params, circumstances, connection| async move {
             if circumstances.contains(Circumstances::IsVitess) {
                 return Err(ConnectorError::from_msg(
@@ -275,6 +290,7 @@ impl SqlFlavour for MysqlFlavour {
         &'a mut self,
         migrations: &'a [MigrationDirectory],
         shadow_database_connection_string: Option<String>,
+        namespaces: Option<Namespaces>,
     ) -> BoxFuture<'a, ConnectorResult<SqlSchema>> {
         let shadow_database_connection_string = shadow_database_connection_string.or_else(|| {
             self.state
@@ -306,8 +322,8 @@ impl SqlFlavour for MysqlFlavour {
                 shadow_database.ensure_connection_validity().await?;
 
                 tracing::info!("Connecting to user-provided shadow database.");
-                if shadow_database.reset().await.is_err() {
-                    crate::best_effort_reset(&mut shadow_database).await?;
+                if shadow_database.reset(None).await.is_err() {
+                    crate::best_effort_reset(&mut shadow_database, namespaces).await?;
                 }
 
                 shadow_db::sql_schema_from_migrations_history(migrations, shadow_database).await
@@ -343,6 +359,19 @@ impl SqlFlavour for MysqlFlavour {
 
                     ret
                 })
+            }
+        }
+    }
+
+    fn set_preview_features(&mut self, preview_features: enumflags2::BitFlags<psl::PreviewFeature>) {
+        match &mut self.state {
+            super::State::Initial => {
+                if !preview_features.is_empty() {
+                    tracing::warn!("set_preview_feature on Initial state has no effect ({preview_features}).");
+                }
+            }
+            super::State::WithParams(params) | super::State::Connected(params, _) => {
+                params.connector_params.preview_features = preview_features
             }
         }
     }
@@ -429,7 +458,7 @@ where
     C: (FnOnce(&'a mut Params, BitFlags<Circumstances>, &'a mut Connection) -> F) + Send + 'a,
 {
     static MYSQL_SYSTEM_DATABASES: Lazy<regex::RegexSet> = Lazy::new(|| {
-        RegexSet::new(&[
+        RegexSet::new([
             "(?i)^mysql$",
             "(?i)^information_schema$",
             "(?i)^performance_schema$",

@@ -4,8 +4,9 @@ mod write;
 pub use read::*;
 pub use write::*;
 
+use crate::ToGraphviz;
 use connector::filter::Filter;
-use prisma_models::{FieldSelection, ModelRef};
+use prisma_models::{FieldSelection, ModelRef, SelectionResult};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
@@ -84,11 +85,27 @@ pub trait FilteredQuery {
     }
 }
 
+pub trait FilteredNestedMutation {
+    /// Sets the parent id of a nested mutation.
+    /// This indicates the connector that it doesn't need to refetch the child and that the mutation
+    /// can directly be performed using that id.
+    fn set_selectors(&mut self, selectors: Vec<SelectionResult>);
+}
+
 impl std::fmt::Display for Query {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Read(q) => write!(f, "{}", q),
             Self::Write(q) => write!(f, "{}", q),
+        }
+    }
+}
+
+impl ToGraphviz for Query {
+    fn to_graphviz(&self) -> String {
+        match self {
+            Self::Read(q) => q.to_graphviz(),
+            Self::Write(q) => q.to_graphviz(),
         }
     }
 }

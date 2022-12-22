@@ -4,7 +4,7 @@ use self::connection::*;
 use crate::flavour::SqlFlavour;
 use indoc::indoc;
 use migration_connector::{
-    migrations_directory::MigrationDirectory, BoxFuture, ConnectorError, ConnectorParams, ConnectorResult,
+    migrations_directory::MigrationDirectory, BoxFuture, ConnectorError, ConnectorParams, ConnectorResult, Namespaces,
 };
 use sql_schema_describer::SqlSchema;
 use std::path::Path;
@@ -96,11 +96,11 @@ impl SqlFlavour for SqliteFlavour {
         self.raw_cmd(sql)
     }
 
-    fn datamodel_connector(&self) -> &'static dyn datamodel::datamodel_connector::Connector {
-        datamodel::builtin_connectors::SQLITE
+    fn datamodel_connector(&self) -> &'static dyn psl::datamodel_connector::Connector {
+        psl::builtin_connectors::SQLITE
     }
 
-    fn describe_schema(&mut self) -> BoxFuture<'_, ConnectorResult<SqlSchema>> {
+    fn describe_schema(&mut self, _namespaces: Option<Namespaces>) -> BoxFuture<'_, ConnectorResult<SqlSchema>> {
         Box::pin(async move {
             let schema = with_connection(&mut self.state, |_, conn| Ok(Box::pin(conn.describe_schema())))?.await?;
             Ok(schema)
@@ -245,7 +245,7 @@ impl SqlFlavour for SqliteFlavour {
         ready(with_connection(&mut self.state, |_, conn| conn.raw_cmd(sql)))
     }
 
-    fn reset(&mut self) -> BoxFuture<'_, ConnectorResult<()>> {
+    fn reset(&mut self, _namespaces: Option<Namespaces>) -> BoxFuture<'_, ConnectorResult<()>> {
         ready(with_connection(&mut self.state, move |params, connection| {
             let file_path = &params.file_path;
 
@@ -253,7 +253,13 @@ impl SqlFlavour for SqliteFlavour {
             connection.raw_cmd("PRAGMA main.quick_check")?;
 
             tracing::debug!("Truncating {:?}", file_path);
-            std::fs::File::create(file_path).expect("failed to truncate sqlite file");
+
+            std::fs::File::create(file_path).map_err(|io_error| {
+                ConnectorError::from_source(
+                    io_error,
+                    "Failed to truncate sqlite file. Please check that you have write permissions on the directory.",
+                )
+            })?;
 
             acquire_lock(connection)?;
 
@@ -273,11 +279,25 @@ impl SqlFlavour for SqliteFlavour {
         Ok(())
     }
 
+    fn set_preview_features(&mut self, preview_features: enumflags2::BitFlags<psl::PreviewFeature>) {
+        match &mut self.state {
+            super::State::Initial => {
+                if !preview_features.is_empty() {
+                    tracing::warn!("set_preview_feature on Initial state has no effect ({preview_features}).");
+                }
+            }
+            super::State::WithParams(params) | super::State::Connected(params, _) => {
+                params.connector_params.preview_features = preview_features
+            }
+        }
+    }
+
     #[tracing::instrument(skip(self, migrations))]
     fn sql_schema_from_migration_history<'a>(
         &'a mut self,
         migrations: &'a [MigrationDirectory],
         _shadow_database_connection_string: Option<String>,
+        _namespaces: Option<Namespaces>,
     ) -> BoxFuture<'_, ConnectorResult<SqlSchema>> {
         Box::pin(async move {
             tracing::debug!("Applying migrations to temporary in-memory SQLite database.");

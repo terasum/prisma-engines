@@ -2,7 +2,7 @@ use crate::serialization_ast::datamodel_ast::{
     Datamodel, Enum, EnumValue, Field, Function, Model, PrimaryKey, UniqueIndex,
 };
 use bigdecimal::ToPrimitive;
-use datamodel::dml::{self, CompositeTypeFieldType, FieldType, Ignorable, PrismaValue, ScalarType};
+use psl::dml::{self, CompositeTypeFieldType, FieldType, Ignorable, PrismaValue, ScalarType};
 
 pub fn schema_to_dmmf(schema: &dml::Datamodel) -> Datamodel {
     let mut datamodel = Datamodel {
@@ -173,7 +173,7 @@ fn field_to_dmmf(model: &dml::Model, field: &dml::Field) -> Field {
         relation_to_fields: get_relation_to_fields(field),
         relation_on_delete: get_relation_delete_strategy(field),
         field_type: get_field_type(field),
-        is_generated: Some(field.is_generated()),
+        is_generated: Some(false),
         is_updated_at: Some(field.is_updated_at()),
         documentation: field.documentation().map(|v| v.to_owned()),
     }
@@ -239,7 +239,7 @@ fn function_to_serde(name: &str, args: &[PrismaValue]) -> serde_json::Value {
 fn get_field_type(field: &dml::Field) -> String {
     match &field.field_type() {
         dml::FieldType::CompositeType(t) => t.clone(),
-        dml::FieldType::Relation(relation_info) => relation_info.to.clone(),
+        dml::FieldType::Relation(relation_info) => relation_info.referenced_model.clone(),
         dml::FieldType::Enum(t) => t.clone(),
         dml::FieldType::Unsupported(t) => t.clone(),
         dml::FieldType::Scalar(t, _) => type_to_string(t),
@@ -281,23 +281,18 @@ fn get_relation_delete_strategy(field: &dml::Field) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::schema_to_dmmf;
-    use datamodel::dml::Datamodel;
     use pretty_assertions::assert_eq;
+    use psl::dml::Datamodel;
     use std::fs;
 
     pub(crate) fn parse(datamodel_string: &str) -> Datamodel {
-        match datamodel::parse_datamodel(datamodel_string) {
-            Ok(s) => s.subject,
-            Err(errs) => {
-                panic!(
-                    "Datamodel parsing failed\n\n{}",
-                    errs.to_pretty_string("", datamodel_string)
-                )
-            }
+        match psl::parse_schema(datamodel_string) {
+            Ok(s) => psl::lift(&s),
+            Err(err) => panic!("Datamodel parsing failed\n\n{err}",),
         }
     }
 
-    fn render_to_dmmf(schema: &datamodel::dml::Datamodel) -> String {
+    fn render_to_dmmf(schema: &psl::dml::Datamodel) -> String {
         let dmmf = schema_to_dmmf(schema);
         serde_json::to_string_pretty(&dmmf).expect("Failed to render JSON")
     }

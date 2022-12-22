@@ -3,8 +3,8 @@ use crate::PrismaResponse;
 use futures::FutureExt;
 use indexmap::IndexMap;
 use query_core::{
-    schema::QuerySchemaRef, BatchDocument, CompactedDocument, Item, Operation, QueryDocument, QueryExecutor,
-    QueryValue, ResponseData, TxId,
+    schema::QuerySchemaRef, BatchDocument, BatchDocumentTransaction, CompactedDocument, Item, Operation, QueryDocument,
+    QueryExecutor, ResponseData, TxId,
 };
 use std::{fmt, panic::AssertUnwindSafe};
 
@@ -25,13 +25,13 @@ impl<'a> GraphQlHandler<'a> {
     }
 
     pub async fn handle(&self, body: GraphQlBody, tx_id: Option<TxId>, trace_id: Option<String>) -> PrismaResponse {
-        tracing::debug!("Incoming GraphQL query: {:?}", body);
+        tracing::debug!("Incoming GraphQL query: {:?}", &body);
 
         match body.into_doc() {
             Ok(QueryDocument::Single(query)) => self.handle_single(query, tx_id, trace_id).await,
-            Ok(QueryDocument::Multi(batch)) => match batch.compact() {
-                BatchDocument::Multi(batch, transactional) => {
-                    self.handle_batch(batch, transactional, tx_id, trace_id).await
+            Ok(QueryDocument::Multi(batch)) => match batch.compact(self.query_schema) {
+                BatchDocument::Multi(batch, transaction) => {
+                    self.handle_batch(batch, transaction, tx_id, trace_id).await
                 }
                 BatchDocument::Compact(compacted) => self.handle_compacted(compacted, tx_id, trace_id).await,
             },
@@ -64,7 +64,7 @@ impl<'a> GraphQlHandler<'a> {
     async fn handle_batch(
         &self,
         queries: Vec<Operation>,
-        transactional: bool,
+        transaction: Option<BatchDocumentTransaction>,
         tx_id: Option<TxId>,
         trace_id: Option<String>,
     ) -> PrismaResponse {
@@ -73,7 +73,7 @@ impl<'a> GraphQlHandler<'a> {
         match AssertUnwindSafe(self.executor.execute_all(
             tx_id,
             queries,
-            transactional,
+            transaction,
             self.query_schema.clone(),
             trace_id,
         ))
@@ -123,8 +123,29 @@ impl<'a> GraphQlHandler<'a> {
             Ok(Ok(response_data)) => {
                 let mut gql_response: GQLResponse = response_data.into();
 
-                // We find the response data and make a hash from the given unique keys.
-                let data = gql_response
+                // At this point, many findUnique queries were converted to a single findMany query and that query was run.
+                // This means we have a list of results and we need to map each result back to their original findUnique query.
+                // `data` is the piece of logic that allows us to do that mapping.
+                // It takes the findMany response and converts it to a map of arguments to result.
+                // Let's take an example. Given the following batched queries:
+                // [
+                //    findUnique(where: { id: 1, name: "Bob" }) { id name age },
+                //    findUnique(where: { id: 2, name: "Alice" }) { id name age }
+                // ]
+                // 1. This gets converted to: findMany(where: { OR: [{ id: 1, name: "Bob" }, { id: 2, name: "Alice" }] }) { id name age }
+                // 2. Say we get the following result back: [{ id: 1, name: "Bob", age: 18 }, { id: 2, name: "Alice", age: 27 }]
+                // 3. We know the inputted arguments are ["id", "name"]
+                // 4. So we go over the result and build the following list:
+                // [
+                //  ({ id: 1, name: "Bob" },   { id: 1, name: "Bob", age: 18 }),
+                //  ({ id: 2, name: "Alice" }, { id: 2, name: "Alice", age: 27 })
+                // ]
+                // 5. Now, given the original findUnique queries and that list, we can easily find back which arguments maps to which result
+                // [
+                //    findUnique(where: { id: 1, name: "Bob" }) { id name age } -> { id: 1, name: "Bob", age: 18 }
+                //    findUnique(where: { id: 2, name: "Alice" }) { id name age } -> { id: 2, name: "Alice", age: 27 }
+                // ]
+                let args_to_results = gql_response
                     .take_data(plural_name)
                     .unwrap()
                     .into_list()
@@ -134,14 +155,14 @@ impl<'a> GraphQlHandler<'a> {
                 let results: Vec<GQLResponse> = arguments
                     .into_iter()
                     .map(|args| {
-                        let vals: Vec<QueryValue> = args.into_iter().map(|(_, v)| v).collect();
                         let mut responses = GQLResponse::with_capacity(1);
 
+                        // This is step 5 of the comment above.
                         // Copying here is mandatory due to some of the queries
                         // might be repeated with the same arguments in the original
                         // batch. We need to give the same answer for both of them.
-                        match data.get(&vals) {
-                            Some(result) => {
+                        match args_to_results.iter().find(|(a, _)| *a == args) {
+                            Some((_, result)) => {
                                 // Filter out all the keys not selected in the
                                 // original query.
                                 let result: IndexMap<String, Item> = result

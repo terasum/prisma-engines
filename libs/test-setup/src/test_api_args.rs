@@ -7,7 +7,7 @@ use std::{fmt::Display, io::Write as _};
 #[derive(Debug)]
 pub(crate) struct DbUnderTest {
     pub(crate) capabilities: BitFlags<Capabilities>,
-    database_url: String,
+    pub(crate) database_url: String,
     shadow_database_url: Option<String>,
     provider: &'static str,
     pub(crate) tags: BitFlags<Tags>,
@@ -113,22 +113,32 @@ pub(crate) fn db_under_test() -> &'static DbUnderTest {
 pub struct TestApiArgs {
     test_function_name: &'static str,
     preview_features: &'static [&'static str],
+    namespaces: &'static [&'static str],
     db: &'static DbUnderTest,
 }
 
 const EMPTY_PREVIEW_FEATURES: &[&str] = &[];
 
 impl TestApiArgs {
-    pub fn new(test_function_name: &'static str, preview_features: &'static [&'static str]) -> Self {
+    pub fn new(
+        test_function_name: &'static str,
+        preview_features: &'static [&'static str],
+        namespaces: &'static [&'static str],
+    ) -> Self {
         TestApiArgs {
             test_function_name,
             preview_features,
+            namespaces,
             db: db_under_test(),
         }
     }
 
     pub fn preview_features(&self) -> &'static [&'static str] {
         self.preview_features
+    }
+
+    pub fn namespaces(&self) -> &'static [&'static str] {
+        self.namespaces
     }
 
     pub fn test_function_name(&self) -> &'static str {

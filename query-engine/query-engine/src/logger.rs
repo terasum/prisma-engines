@@ -8,7 +8,8 @@ use opentelemetry::{
     KeyValue,
 };
 use opentelemetry_otlp::WithExportConfig;
-use query_core::{is_user_facing_trace_filter, MetricRegistry};
+use query_core::is_user_facing_trace_filter;
+use query_engine_metrics::MetricRegistry;
 use tracing::{dispatcher::SetGlobalDefaultError, subscriber};
 use tracing_subscriber::{filter::filter_fn, layer::SubscriberExt, EnvFilter, Layer};
 
@@ -141,7 +142,10 @@ fn create_env_filter(log_queries: bool) -> EnvFilter {
     }
 
     if log_queries {
-        filter = filter.add_directive("quaint[{is_query}]=trace".parse().unwrap());
+        // even when mongo queries are logged in debug mode, we want to log them if the log level is higher
+        filter = filter
+            .add_directive("quaint[{is_query}]=trace".parse().unwrap())
+            .add_directive("mongodb_query_connector=debug".parse().unwrap());
     }
 
     filter

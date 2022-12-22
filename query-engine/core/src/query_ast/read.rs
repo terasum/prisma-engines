@@ -1,6 +1,8 @@
 //! Prisma read query AST
 use super::FilteredQuery;
+use crate::ToGraphviz;
 use connector::{filter::Filter, AggregationSelection, QueryArguments, RelAggregationSelection};
+use enumflags2::BitFlags;
 use prisma_models::prelude::*;
 use std::fmt::Display;
 
@@ -86,6 +88,61 @@ impl Display for ReadQuery {
     }
 }
 
+impl ToGraphviz for ReadQuery {
+    fn to_graphviz(&self) -> String {
+        match self {
+            Self::RecordQuery(q) => format!("RecordQuery(name: '{}', selection: {})", q.name, q.selected_fields),
+            Self::ManyRecordsQuery(q) => format!(
+                r#"ManyRecordsQuery(name: '{}', model: '{}', selection: {})"#,
+                q.name, q.model.name, q.selected_fields
+            ),
+            Self::RelatedRecordsQuery(q) => format!(
+                "RelatedRecordsQuery(name: '{}', parent model: '{}', parent relation field: {}, selection: {})",
+                q.name,
+                q.parent_field.model().name,
+                q.parent_field.name,
+                q.selected_fields
+            ),
+            Self::AggregateRecordsQuery(q) => format!("AggregateRecordsQuery: {}", q.name),
+        }
+    }
+}
+
+#[enumflags2::bitflags]
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum QueryOption {
+    ThrowOnEmpty,
+    Other,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct QueryOptions(BitFlags<QueryOption>);
+
+// Allows for: QueryOption::ThrowOnEmpty.into()  to be a QueryOptions
+impl From<QueryOption> for QueryOptions {
+    fn from(options: QueryOption) -> Self {
+        QueryOptions(options.into())
+    }
+}
+
+// Allows for: (QueryOption::ThrowOnEmpty | QueryOption::Other).into()  to be a QueryOptions
+impl From<BitFlags<QueryOption>> for QueryOptions {
+    fn from(options: BitFlags<QueryOption>) -> Self {
+        QueryOptions(options)
+    }
+}
+
+impl QueryOptions {
+    pub fn none() -> Self {
+        Self(BitFlags::empty())
+    }
+
+    pub fn contains(&self, option: QueryOption) -> bool {
+        self.0.contains(option)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RecordQuery {
     pub name: String,
@@ -96,6 +153,7 @@ pub struct RecordQuery {
     pub nested: Vec<ReadQuery>,
     pub selection_order: Vec<String>,
     pub aggregation_selections: Vec<RelAggregationSelection>,
+    pub options: QueryOptions,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +166,7 @@ pub struct ManyRecordsQuery {
     pub nested: Vec<ReadQuery>,
     pub selection_order: Vec<String>,
     pub aggregation_selections: Vec<RelAggregationSelection>,
+    pub options: QueryOptions,
 }
 
 #[derive(Debug, Clone)]

@@ -5,6 +5,7 @@ use crate::{
 };
 use enumflags2::BitFlags;
 use sql_schema_describer::{
+    postgres::{self, PostgresSchemaExt},
     walkers::{ColumnWalker, TableWalker},
     ColumnId, EnumId, ForeignKeyId, IndexId, SqlSchema, TableId, UdtId, ViewId,
 };
@@ -42,6 +43,9 @@ impl SqlMigration {
         #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq)]
         #[repr(u8)]
         enum DriftType {
+            AlteredExtension,
+            DroppedExtension,
+            CreatedExtension,
             AddedEnum,
             AddedTable,
             RemovedEnum,
@@ -60,6 +64,7 @@ impl SqlMigration {
             let idx = idx as u32;
             match step {
                 SqlMigrationStep::AlterSequence(_, _) => (),
+                SqlMigrationStep::CreateSchema(_) => (), // todo
                 SqlMigrationStep::DropView(drop_view) => {
                     drift_items.insert((
                         DriftType::RemovedView,
@@ -153,6 +158,24 @@ impl SqlMigration {
                         idx,
                     ));
                 }
+                SqlMigrationStep::CreateExtension(create_extension) => {
+                    let ext: &PostgresSchemaExt = self.schemas().next.downcast_connector_data();
+                    let extension = ext.get_extension(create_extension.id);
+
+                    drift_items.insert((DriftType::CreatedExtension, &extension.name, idx));
+                }
+                SqlMigrationStep::AlterExtension(alter_extension) => {
+                    let ext: &PostgresSchemaExt = self.schemas().previous.downcast_connector_data();
+                    let extension = ext.get_extension(alter_extension.ids.previous);
+
+                    drift_items.insert((DriftType::AlteredExtension, &extension.name, idx));
+                }
+                SqlMigrationStep::DropExtension(drop_extension) => {
+                    let ext: &PostgresSchemaExt = self.schemas().previous.downcast_connector_data();
+                    let extension = ext.get_extension(drop_extension.id);
+
+                    drift_items.insert((DriftType::DroppedExtension, &extension.name, idx));
+                }
             };
         }
 
@@ -187,6 +210,17 @@ impl SqlMigration {
                         out.push_str(item_name);
                         out.push_str("` table\n");
                     }
+                    DriftType::CreatedExtension => {
+                        out.push_str("\n[+] Added extensions\n");
+                    }
+                    DriftType::AlteredExtension => {
+                        out.push_str("\n[*] Changed the `");
+                        out.push_str(item_name);
+                        out.push_str("` extension\n");
+                    }
+                    DriftType::DroppedExtension => {
+                        out.push_str("\n[-] Removed extensions\n`");
+                    }
                 }
             }
 
@@ -201,6 +235,7 @@ impl SqlMigration {
                     out.push_str(self.schemas().next.walk(*enum_id).name());
                     out.push('\n');
                 }
+                SqlMigrationStep::CreateSchema(_) => {} // todo
                 SqlMigrationStep::AlterEnum(alter_enum) => {
                     for added in &alter_enum.created_variants {
                         out.push_str("  [+] Added variant `");
@@ -362,6 +397,14 @@ impl SqlMigration {
                     out.push_str(index.previous.name());
                     out.push_str("`\n");
                 }
+                SqlMigrationStep::CreateExtension(create_extension) => {
+                    let ext: &PostgresSchemaExt = self.schemas().next.downcast_connector_data();
+                    out.push_str("  - ");
+                    out.push_str(&ext.get_extension(create_extension.id).name);
+                    out.push('\n');
+                }
+                SqlMigrationStep::AlterExtension(_) => {}
+                SqlMigrationStep::DropExtension(_) => {}
             }
         }
 
@@ -405,6 +448,10 @@ fn render_column_changes(columns: Pair<ColumnWalker<'_>>, changes: &ColumnChange
 // you would intuitively expect.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum SqlMigrationStep {
+    CreateSchema(sql_schema_describer::NamespaceId),
+    DropExtension(DropExtension),
+    CreateExtension(CreateExtension),
+    AlterExtension(AlterExtension),
     AlterSequence(Pair<u32>, SequenceChanges),
     DropView(DropView),
     DropUserDefinedType(DropUserDefinedType),
@@ -468,6 +515,7 @@ impl SqlMigrationStep {
             SqlMigrationStep::AlterTable(_) => "AlterTable",
             SqlMigrationStep::CreateEnum(_) => "CreateEnum",
             SqlMigrationStep::CreateIndex { .. } => "CreateIndex",
+            SqlMigrationStep::CreateSchema { .. } => "CreateSchema",
             SqlMigrationStep::CreateTable { .. } => "CreateTable",
             SqlMigrationStep::DropEnum(_) => "DropEnum",
             SqlMigrationStep::DropForeignKey { .. } => "DropForeignKey",
@@ -479,8 +527,33 @@ impl SqlMigrationStep {
             SqlMigrationStep::RedefineTables { .. } => "RedefineTables",
             SqlMigrationStep::RenameForeignKey { .. } => "RenameForeignKey",
             SqlMigrationStep::RenameIndex { .. } => "RenameIndex",
+            SqlMigrationStep::CreateExtension(_) => "CreateExtension",
+            SqlMigrationStep::AlterExtension(_) => "AlterExtension",
+            SqlMigrationStep::DropExtension(_) => "DropExtension",
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct AlterExtension {
+    pub ids: Pair<postgres::ExtensionId>,
+    pub changes: Vec<ExtensionChange>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct CreateExtension {
+    pub id: postgres::ExtensionId,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct DropExtension {
+    pub id: postgres::ExtensionId,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ExtensionChange {
+    AlterVersion,
+    AlterSchema,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

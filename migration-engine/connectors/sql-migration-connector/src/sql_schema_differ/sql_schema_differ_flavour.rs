@@ -46,19 +46,19 @@ pub(crate) trait SqlSchemaDifferFlavour {
     }
 
     /// Return whether a column's type needs to be migrated, and how.
-    fn column_type_change(&self, differ: Pair<ColumnWalker<'_>>) -> Option<ColumnTypeChange> {
-        if differ.previous.column_type_family() != differ.next.column_type_family() {
-            Some(ColumnTypeChange::RiskyCast)
-        } else {
-            None
-        }
-    }
+    fn column_type_change(&self, differ: Pair<ColumnWalker<'_>>) -> Option<ColumnTypeChange>;
 
     /// Push enum-related steps.
     fn push_enum_steps(&self, _steps: &mut Vec<SqlMigrationStep>, _db: &DifferDatabase<'_>) {}
 
     /// Push AlterSequence steps.
     fn push_alter_sequence_steps(&self, _steps: &mut Vec<SqlMigrationStep>, _db: &DifferDatabase<'_>) {}
+
+    /// Push AlterExtension steps.
+    fn push_extension_steps(&self, _steps: &mut Vec<SqlMigrationStep>, _db: &DifferDatabase<'_>) {}
+
+    /// Define database-specific extension modules.
+    fn define_extensions(&self, _db: &mut DifferDatabase<'_>) {}
 
     /// Connector-specific criterias deciding whether two indexes match.
     fn indexes_match(&self, _a: IndexWalker<'_>, _b: IndexWalker<'_>) -> bool {

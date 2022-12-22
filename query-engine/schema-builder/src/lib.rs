@@ -30,9 +30,10 @@
 //! The cache can be consumed to produce a list of strong references to the individual input and output
 //! object types, which are then moved to the query schema to keep weak references alive (see TypeRefCache for additional infos).
 
+pub mod constants;
+
 #[macro_use]
 mod cache;
-pub mod constants;
 mod enum_types;
 mod input_types;
 mod mutations;
@@ -40,10 +41,12 @@ mod output_types;
 mod utils;
 
 use cache::TypeRefCache;
-use datamodel_connector::{ConnectorCapabilities, ConnectorCapability, ReferentialIntegrity};
 use prisma_models::{
-    datamodel::common::preview_features::PreviewFeature, CompositeTypeRef, Field as ModelField, Index,
-    InternalDataModelRef, ModelRef, RelationFieldRef, TypeIdentifier,
+    CompositeTypeRef, Field as ModelField, Index, InternalDataModelRef, ModelRef, RelationFieldRef, TypeIdentifier,
+};
+use psl::{
+    datamodel_connector::{Connector, ConnectorCapability},
+    PreviewFeature, PreviewFeatures,
 };
 use schema::*;
 use std::sync::Arc;
@@ -54,37 +57,34 @@ pub(crate) struct BuilderContext {
     internal_data_model: InternalDataModelRef,
     enable_raw_queries: bool,
     cache: TypeCache,
-    capabilities: ConnectorCapabilities,
-    preview_features: Vec<PreviewFeature>,
+    connector: &'static dyn Connector,
+    preview_features: PreviewFeatures,
     nested_create_inputs_queue: NestedInputsQueue,
     nested_update_inputs_queue: NestedInputsQueue,
     // enums?
 }
 
 impl BuilderContext {
-    pub fn new(
-        internal_data_model: InternalDataModelRef,
-        enable_raw_queries: bool,
-        capabilities: ConnectorCapabilities,
-        preview_features: Vec<PreviewFeature>,
-    ) -> Self {
+    pub fn new(internal_data_model: InternalDataModelRef, enable_raw_queries: bool) -> Self {
+        let connector = internal_data_model.schema.connector;
+        let preview_features = internal_data_model.schema.configuration.preview_features();
         Self {
             internal_data_model,
             enable_raw_queries,
             cache: TypeCache::new(),
-            capabilities,
+            connector,
             preview_features,
             nested_create_inputs_queue: Vec::new(),
             nested_update_inputs_queue: Vec::new(),
         }
     }
 
-    pub fn has_feature(&self, feature: &PreviewFeature) -> bool {
+    pub fn has_feature(&self, feature: PreviewFeature) -> bool {
         self.preview_features.contains(feature)
     }
 
     pub fn has_capability(&self, capability: ConnectorCapability) -> bool {
-        self.capabilities.contains(capability)
+        self.connector.has_capability(capability)
     }
 
     /// Get an input (object) type.
@@ -118,7 +118,7 @@ impl BuilderContext {
     }
 
     pub fn can_full_text_search(&self) -> bool {
-        self.has_feature(&PreviewFeature::FullTextSearch)
+        self.has_feature(PreviewFeature::FullTextSearch)
             && (self.has_capability(ConnectorCapability::FullTextSearchWithoutIndex)
                 || self.has_capability(ConnectorCapability::FullTextSearchWithIndex))
     }
@@ -129,6 +129,10 @@ impl BuilderContext {
 
     pub fn composite_types(&self) -> Vec<CompositeTypeRef> {
         self.internal_data_model.composite_types().to_owned()
+    }
+
+    pub fn supports_any(&self, capabilities: &[ConnectorCapability]) -> bool {
+        capabilities.iter().any(|c| self.connector.has_capability(*c))
     }
 }
 
@@ -167,19 +171,8 @@ impl TypeCache {
     }
 }
 
-pub fn build(
-    internal_data_model: InternalDataModelRef,
-    enable_raw_queries: bool,
-    capabilities: ConnectorCapabilities,
-    preview_features: Vec<PreviewFeature>,
-    referential_integrity: ReferentialIntegrity,
-) -> QuerySchema {
-    let mut ctx = BuilderContext::new(
-        internal_data_model,
-        enable_raw_queries,
-        capabilities,
-        preview_features.clone(),
-    );
+pub fn build(internal_data_model: InternalDataModelRef, enable_raw_queries: bool) -> QuerySchema {
+    let mut ctx = BuilderContext::new(internal_data_model, enable_raw_queries);
 
     output_types::objects::initialize_caches(&mut ctx);
 
@@ -206,9 +199,7 @@ pub fn build(
         output_objects,
         enum_types,
         ctx.internal_data_model,
-        ctx.capabilities.capabilities,
-        preview_features,
-        referential_integrity,
+        ctx.connector.capabilities().to_owned(),
     )
 }
 

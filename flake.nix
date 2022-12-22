@@ -1,22 +1,36 @@
 {
   inputs = {
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.rust-overlay.follows = "rust-overlay";
+      inputs.flake-utils.follows = "flake-utils";
+    };
     flake-utils.url = "github:numtide/flake-utils";
+    flake-parts = {
+      url = "github:hercules-ci/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
+    nixpkgs.url = "nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs { inherit system overlays; };
-        shell = import ./shell.nix { inherit pkgs; };
-      in
-      {
-        devShell = shell;
-      }
-    );
+  outputs = inputs@{ self, nixpkgs, rust-overlay, flake-parts, flake-utils, crane, ... }:
+    flake-parts.lib.mkFlake { inherit self; } {
+      systems = flake-utils.lib.defaultSystems;
+      perSystem = { config, system, pkgs, craneLib, ... }: {
+        config._module.args.inputs = inputs;
+        imports = [
+          ./nix/all-engines.nix
+          ./nix/args.nix
+          ./nix/cli-shell.nix
+          ./nix/shell.nix
+          ./prisma-fmt-wasm
+        ];
+      };
+    };
 }

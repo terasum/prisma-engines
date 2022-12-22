@@ -1,7 +1,10 @@
 use super::*;
-use datamodel_connector::{ConnectorCapability, ReferentialIntegrity};
 use fmt::Debug;
-use prisma_models::{datamodel::common::preview_features::PreviewFeature, InternalDataModelRef, ModelRef};
+use prisma_models::{InternalDataModelRef, ModelRef};
+use psl::{
+    datamodel_connector::{ConnectorCapability, RelationMode},
+    PreviewFeatures,
+};
 use std::{borrow::Borrow, fmt};
 
 /// The query schema.
@@ -48,23 +51,23 @@ pub struct ConnectorContext {
     pub capabilities: Vec<ConnectorCapability>,
 
     /// Enabled preview features.
-    pub features: Vec<PreviewFeature>,
+    pub features: PreviewFeatures,
 
-    /// Referential integrity mode of the provider
-    pub referential_integrity: ReferentialIntegrity,
+    /// Relation mode of the provider
+    pub relation_mode: RelationMode,
 }
 
 impl ConnectorContext {
-    pub fn new(
-        capabilities: Vec<ConnectorCapability>,
-        features: Vec<PreviewFeature>,
-        referential_integrity: ReferentialIntegrity,
-    ) -> Self {
+    pub fn new(capabilities: Vec<ConnectorCapability>, features: PreviewFeatures, relation_mode: RelationMode) -> Self {
         Self {
             capabilities,
             features,
-            referential_integrity,
+            relation_mode,
         }
+    }
+
+    pub fn can_native_upsert(&self) -> bool {
+        self.capabilities.contains(&ConnectorCapability::NativeUpsert)
     }
 }
 
@@ -78,9 +81,9 @@ impl QuerySchema {
         _enum_types: Vec<EnumTypeRef>,
         internal_data_model: InternalDataModelRef,
         capabilities: Vec<ConnectorCapability>,
-        features: Vec<PreviewFeature>,
-        referential_integrity: ReferentialIntegrity,
     ) -> Self {
+        let features = internal_data_model.schema.configuration.preview_features();
+        let relation_mode = internal_data_model.schema.relation_mode();
         QuerySchema {
             query,
             mutation,
@@ -88,7 +91,7 @@ impl QuerySchema {
             _output_object_types,
             _enum_types,
             internal_data_model,
-            context: ConnectorContext::new(capabilities, features, referential_integrity),
+            context: ConnectorContext::new(capabilities, features, relation_mode),
         }
     }
 
@@ -142,7 +145,9 @@ pub struct QueryInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryTag {
     FindUnique,
+    FindUniqueOrThrow,
     FindFirst,
+    FindFirstOrThrow,
     FindMany,
     CreateOne,
     CreateMany,
@@ -161,7 +166,9 @@ impl fmt::Display for QueryTag {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
             Self::FindUnique => "findUnique",
+            Self::FindUniqueOrThrow => "findUniqueOrThrow",
             Self::FindFirst => "findFirst",
+            Self::FindFirstOrThrow => "findFirstOrThrow",
             Self::FindMany => "findMany",
             Self::CreateOne => "createOne",
             Self::CreateMany => "createMany",
@@ -228,4 +235,26 @@ pub enum ScalarType {
     UUID,
     Xml,
     Bytes,
+}
+
+impl std::fmt::Display for ScalarType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let typ = match self {
+            ScalarType::Null => "Null",
+            ScalarType::String => "String",
+            ScalarType::Int => "Int",
+            ScalarType::BigInt => "BigInt",
+            ScalarType::Boolean => "Boolean",
+            ScalarType::Float => "Float",
+            ScalarType::Decimal => "Decimal",
+            ScalarType::DateTime => "DateTime",
+            ScalarType::Json => "Json",
+            ScalarType::UUID => "UUID",
+            ScalarType::JsonList => "Json",
+            ScalarType::Xml => "Xml",
+            ScalarType::Bytes => "Bytes",
+        };
+
+        write!(f, "{}", typ)
+    }
 }

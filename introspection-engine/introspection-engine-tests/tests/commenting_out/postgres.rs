@@ -42,6 +42,55 @@ async fn relations_between_ignored_models_should_not_have_field_level_ignores(ap
 }
 
 #[test_connector(tags(Postgres), exclude(CockroachDb))]
+async fn fields_we_cannot_sanitize_are_commented_out_and_warned(api: &TestApi) -> TestResult {
+    let setup = indoc! {r#"
+        CREATE TABLE "Test" (
+            "id" SERIAL PRIMARY KEY,
+            "12" INT NOT NULL
+        );
+    "#};
+
+    api.raw_cmd(setup).await;
+
+    let expected = expect![[r#"
+        generator client {
+          provider = "prisma-client-js"
+        }
+
+        datasource db {
+          provider = "postgresql"
+          url      = "env(TEST_DATABASE_URL)"
+        }
+
+        model Test {
+          id Int @id @default(autoincrement())
+          /// This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
+          // 12 Int @map("12")
+        }
+    "#]];
+
+    api.expect_datamodel(&expected).await;
+
+    let expected = expect![[r#"
+        [
+          {
+            "code": 2,
+            "message": "These fields were commented out because their names are currently not supported by Prisma. Please provide valid ones that match [a-zA-Z][a-zA-Z0-9_]* using the `@map` attribute.",
+            "affected": [
+              {
+                "model": "Test",
+                "field": "12"
+              }
+            ]
+          }
+        ]"#]];
+
+    api.expect_warnings(&expected).await;
+
+    Ok(())
+}
+
+#[test_connector(tags(Postgres), exclude(CockroachDb))]
 async fn unsupported_type_keeps_its_usages(api: &TestApi) -> TestResult {
     api.barrel()
         .execute(|migration| {
@@ -176,38 +225,43 @@ async fn a_table_with_unsupported_types_in_a_relation(api: &TestApi) -> TestResu
 
 #[test_connector(tags(Postgres), exclude(CockroachDb))]
 async fn dbgenerated_in_unsupported(api: &TestApi) -> TestResult {
-    api.barrel()
-        .execute(|migration| {
-            migration.create_table("Blog", move |t| {
-                t.add_column("id", types::primary());
-                t.inject_custom("number Integer Default 1");
-                t.inject_custom("bigger_number Integer DEFAULT sqrt(4)");
-                t.inject_custom("point Point DEFAULT Point(0, 0)");
-            });
-        })
-        .await?;
+    let setup = indoc! {r#"
+        CREATE TABLE "Blog" (
+          id SERIAL PRIMARY KEY,
+          number INT DEFAULT 1,
+          bigger_number INT DEFAULT sqrt(4),
+          point POINT DEFAULT Point(0, 0)
+        )
+    "#};
 
-    let dm = indoc! {r##"
-        model Blog {
-          id                Int    @id @default(autoincrement())
-          number            Int?   @default(1)
-          bigger_number     Int?   @default(dbgenerated("sqrt((4)::double precision)"))
-          point             Unsupported("point")? @default(dbgenerated("point((0)::double precision, (0)::double precision)"))
+    api.raw_cmd(setup).await;
+
+    let expectation = expect![[r#"
+        generator client {
+          provider = "prisma-client-js"
         }
-    "##};
 
-    api.assert_eq_datamodels(dm, &api.introspect().await?);
+        datasource db {
+          provider = "postgresql"
+          url      = "env(TEST_DATABASE_URL)"
+        }
+
+        model Blog {
+          id            Int                   @id @default(autoincrement())
+          number        Int?                  @default(1)
+          bigger_number Int?                  @default(dbgenerated("sqrt((4)::double precision)"))
+          point         Unsupported("point")? @default(dbgenerated("point((0)::double precision, (0)::double precision)"))
+        }
+    "#]];
+
+    api.expect_datamodel(&expectation).await;
 
     Ok(())
 }
 
-#[test_connector(tags(Postgres))]
+#[test_connector(tags(Postgres), exclude(CockroachDb))]
 async fn commenting_out_a_table_without_columns(api: &TestApi) -> TestResult {
-    api.barrel()
-        .execute(|migration| {
-            migration.create_table("Test", |_t| {});
-        })
-        .await?;
+    api.raw_cmd("CREATE TABLE \"Test\" ();").await;
 
     let expected = json!([{
         "code": 14,
@@ -221,14 +275,21 @@ async fn commenting_out_a_table_without_columns(api: &TestApi) -> TestResult {
 
     assert_eq_json!(expected, api.introspection_warnings().await?);
 
-    let dm = indoc! {r#"
-        // We could not retrieve columns for the underlying table. Either it has none or you are missing rights to see them. Please check your privileges.
+    let expected = expect![[r#"
+        generator client {
+          provider = "prisma-client-js"
+        }
+
+        datasource db {
+          provider = "postgresql"
+          url      = "env(TEST_DATABASE_URL)"
+        }
+
+        /// We could not retrieve columns for the underlying table. Either it has none or you are missing rights to see them. Please check your privileges.
         // model Test {
         // }
-    "#};
-
-    api.assert_eq_datamodels(dm, &api.introspect().await?);
-
+    "#]];
+    api.expect_datamodel(&expected).await;
     Ok(())
 }
 

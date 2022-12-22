@@ -2,8 +2,8 @@ use crate::{column_metadata::ColumnMetadata, error::SqlError, value::to_prisma_v
 use bigdecimal::{BigDecimal, FromPrimitive};
 use chrono::{DateTime, NaiveDate, Utc};
 use connector_interface::{coerce_null_to_zero_value, AggregationResult, AggregationSelection};
-use datamodel::dml::FieldArity;
 use prisma_models::{PrismaValue, Record, TypeIdentifier};
+use psl::dml::FieldArity;
 use quaint::{
     ast::{Expression, Value},
     connector::ResultRow,
@@ -122,7 +122,7 @@ impl ToSqlRow for ResultRow {
     }
 }
 
-pub fn row_value_to_prisma_value(p_value: Value, meta: ColumnMetadata<'_>) -> Result<PrismaValue, SqlError> {
+fn row_value_to_prisma_value(p_value: Value, meta: ColumnMetadata<'_>) -> Result<PrismaValue, SqlError> {
     let create_error = |value: &Value| {
         let message = match meta.name() {
             Some(name) => {
@@ -177,7 +177,7 @@ pub fn row_value_to_prisma_value(p_value: Value, meta: ColumnMetadata<'_>) -> Re
             value if value.is_integer() => {
                 let ts = value.as_integer().unwrap();
                 let nsecs = ((ts % 1000) * 1_000_000) as u32;
-                let secs = (ts / 1000) as i64;
+                let secs = ts / 1000;
                 let naive = chrono::NaiveDateTime::from_timestamp(secs, nsecs);
                 let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
 

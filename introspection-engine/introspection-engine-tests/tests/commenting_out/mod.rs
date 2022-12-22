@@ -17,7 +17,7 @@ async fn a_table_without_uniques_should_ignore(api: &TestApi) -> TestResult {
             migration.create_table("Post", |t| {
                 t.add_column("id", types::integer());
                 t.add_column("user_id", types::integer().nullable(false));
-                t.add_index("Post_user_id_idx", types::index(&["user_id"]));
+                t.add_index("Post_user_id_idx", types::index(["user_id"]));
                 t.add_foreign_key(&["user_id"], "User", &["id"]);
             });
         })
@@ -108,7 +108,7 @@ async fn a_table_without_fully_required_compound_unique(api: &TestApi) -> TestRe
     Ok(())
 }
 
-#[test_connector(exclude(CockroachDb))]
+#[test_connector(exclude(CockroachDb, Mysql, Mssql, Sqlite))]
 async fn remapping_field_names_to_empty(api: &TestApi) -> TestResult {
     api.barrel()
         .execute(|migration| {
@@ -121,15 +121,24 @@ async fn remapping_field_names_to_empty(api: &TestApi) -> TestResult {
         })
         .await?;
 
-    let dm = indoc! {r#"
-        model User {
-          // This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
-          // 1 String @map("1")
-          last Int    @id @default(autoincrement())
+    let dm = expect![[r#"
+        generator client {
+          provider = "prisma-client-js"
         }
-    "#};
 
-    api.assert_eq_datamodels(dm, &api.introspect().await?);
+        datasource db {
+          provider = "postgresql"
+          url      = "env(TEST_DATABASE_URL)"
+        }
+
+        model User {
+          /// This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
+          // 1 String @map("1")
+          last Int @id @default(autoincrement())
+        }
+    "#]];
+
+    api.expect_datamodel(&dm).await;
 
     Ok(())
 }

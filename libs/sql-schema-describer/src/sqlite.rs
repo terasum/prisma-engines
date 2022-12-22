@@ -81,11 +81,11 @@ impl SqlSchemaDescriberBackend for SqlSchemaDescriber<'_> {
         })
     }
 
-    async fn describe(&self, _schema: &str) -> DescriberResult<SqlSchema> {
+    async fn describe(&self, _schemas: &[&str]) -> DescriberResult<SqlSchema> {
         self.describe_impl().await
     }
 
-    async fn version(&self, _schema: &str) -> DescriberResult<Option<String>> {
+    async fn version(&self) -> DescriberResult<Option<String>> {
         Ok(Some(quaint::connector::sqlite_version().to_owned()))
     }
 }
@@ -152,7 +152,7 @@ impl<'a> SqlSchemaDescriber<'a> {
 
         for name in names {
             let cloned_name = name.clone();
-            let id = schema.push_table(name);
+            let id = schema.push_table(name, Default::default());
             map.insert(cloned_name, id);
         }
 
@@ -182,6 +182,7 @@ impl<'a> SqlSchemaDescriber<'a> {
 
         for row in result_set.into_iter() {
             views.push(View {
+                namespace_id: NamespaceId(0),
                 name: row.get_expect_string("view_name"),
                 definition: row.get_string("view_sql"),
             })
@@ -391,13 +392,15 @@ async fn push_columns(
         };
 
         let pk_col = row.get("pk").and_then(|x| x.as_integer()).expect("primary key");
+        let column_id = ColumnId(schema.columns.len() as u32);
+        let default_value_id = default.map(|default| schema.push_default_value(column_id, default));
 
         let column_id = schema.push_column(
             table_id,
             Column {
                 name: row.get_expect_string("name"),
                 tpe,
-                default,
+                default_value_id,
                 auto_increment: false,
             },
         );

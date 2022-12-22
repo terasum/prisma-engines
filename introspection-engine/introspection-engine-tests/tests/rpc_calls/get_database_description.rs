@@ -22,12 +22,15 @@ async fn database_description_for_mysql_should_work(api: &TestApi) -> TestResult
 
     let expected = expect![[r#"
         {
+          "namespaces": [],
           "tables": [
             {
+              "namespace_id": 0,
               "name": "Blog"
             }
           ],
           "enums": [],
+          "enum_variants": [],
           "columns": [
             [
               0,
@@ -36,10 +39,9 @@ async fn database_description_for_mysql_should_work(api: &TestApi) -> TestResult
                 "tpe": {
                   "full_data_type": "int(11)",
                   "family": "Int",
-                  "arity": "Required",
-                  "native_type": "Int"
+                  "arity": "Required"
                 },
-                "default": null,
+                "default_value_id": null,
                 "auto_increment": true
               }
             ],
@@ -50,15 +52,15 @@ async fn database_description_for_mysql_should_work(api: &TestApi) -> TestResult
                 "tpe": {
                   "full_data_type": "text",
                   "family": "String",
-                  "arity": "Required",
-                  "native_type": "Text"
+                  "arity": "Required"
                 },
-                "default": null,
+                "default_value_id": null,
                 "auto_increment": false
               }
             ]
           ],
           "foreign_keys": [],
+          "default_values": [],
           "foreign_key_columns": [],
           "indexes": [
             {
@@ -92,12 +94,15 @@ async fn database_description_for_mysql_8_should_work(api: &TestApi) -> TestResu
 
     let expected = expect![[r#"
         {
+          "namespaces": [],
           "tables": [
             {
+              "namespace_id": 0,
               "name": "Blog"
             }
           ],
           "enums": [],
+          "enum_variants": [],
           "columns": [
             [
               0,
@@ -106,10 +111,9 @@ async fn database_description_for_mysql_8_should_work(api: &TestApi) -> TestResu
                 "tpe": {
                   "full_data_type": "int",
                   "family": "Int",
-                  "arity": "Required",
-                  "native_type": "Int"
+                  "arity": "Required"
                 },
-                "default": null,
+                "default_value_id": null,
                 "auto_increment": true
               }
             ],
@@ -120,15 +124,15 @@ async fn database_description_for_mysql_8_should_work(api: &TestApi) -> TestResu
                 "tpe": {
                   "full_data_type": "text",
                   "family": "String",
-                  "arity": "Required",
-                  "native_type": "Text"
+                  "arity": "Required"
                 },
-                "default": null,
+                "default_value_id": null,
                 "auto_increment": false
               }
             ]
           ],
           "foreign_keys": [],
+          "default_values": [],
           "foreign_key_columns": [],
           "indexes": [
             {
@@ -162,12 +166,17 @@ async fn database_description_for_postgres_should_work(api: &TestApi) -> TestRes
 
     let expected = expect![[r#"
         {
+          "namespaces": [
+            "prisma-tests"
+          ],
           "tables": [
             {
+              "namespace_id": 0,
               "name": "Blog"
             }
           ],
           "enums": [],
+          "enum_variants": [],
           "columns": [
             [
               0,
@@ -176,15 +185,9 @@ async fn database_description_for_postgres_should_work(api: &TestApi) -> TestRes
                 "tpe": {
                   "full_data_type": "int4",
                   "family": "Int",
-                  "arity": "Required",
-                  "native_type": "Integer"
+                  "arity": "Required"
                 },
-                "default": {
-                  "kind": {
-                    "Sequence": "Blog_id_seq"
-                  },
-                  "constraint_name": null
-                },
+                "default_value_id": 0,
                 "auto_increment": true
               }
             ],
@@ -195,15 +198,25 @@ async fn database_description_for_postgres_should_work(api: &TestApi) -> TestRes
                 "tpe": {
                   "full_data_type": "text",
                   "family": "String",
-                  "arity": "Required",
-                  "native_type": "Text"
+                  "arity": "Required"
                 },
-                "default": null,
+                "default_value_id": null,
                 "auto_increment": false
               }
             ]
           ],
           "foreign_keys": [],
+          "default_values": [
+            [
+              0,
+              {
+                "kind": {
+                  "Sequence": "Blog_id_seq"
+                },
+                "constraint_name": null
+              }
+            ]
+          ],
           "foreign_key_columns": [],
           "indexes": [
             {
@@ -237,12 +250,15 @@ async fn database_description_for_sqlite_should_work(api: &TestApi) -> TestResul
 
     let expected = expect![[r#"
         {
+          "namespaces": [],
           "tables": [
             {
+              "namespace_id": 0,
               "name": "Blog"
             }
           ],
           "enums": [],
+          "enum_variants": [],
           "columns": [
             [
               0,
@@ -251,10 +267,9 @@ async fn database_description_for_sqlite_should_work(api: &TestApi) -> TestResul
                 "tpe": {
                   "full_data_type": "integer",
                   "family": "Int",
-                  "arity": "Required",
-                  "native_type": null
+                  "arity": "Required"
                 },
-                "default": null,
+                "default_value_id": null,
                 "auto_increment": true
               }
             ],
@@ -265,15 +280,15 @@ async fn database_description_for_sqlite_should_work(api: &TestApi) -> TestResul
                 "tpe": {
                   "full_data_type": "text",
                   "family": "String",
-                  "arity": "Required",
-                  "native_type": null
+                  "arity": "Required"
                 },
-                "default": null,
+                "default_value_id": null,
                 "auto_increment": false
               }
             ]
           ],
           "foreign_keys": [],
+          "default_values": [],
           "foreign_key_columns": [],
           "indexes": [
             {

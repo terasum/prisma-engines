@@ -1,10 +1,11 @@
-use datamodel::{
-    datamodel_connector::{Connector, Diagnostics, ReferentialIntegrity},
-    parse_configuration, parse_schema_ast,
-    parser_database::{ast, ParserDatabase, SourceFile},
-};
 use log::*;
 use lsp_types::*;
+use psl::{
+    datamodel_connector::{Connector, RelationMode},
+    parse_configuration,
+    parser_database::{ast, ParserDatabase, SourceFile},
+    Diagnostics,
+};
 use std::sync::Arc;
 
 pub(crate) fn empty_completion_list() -> CompletionList {
@@ -15,10 +16,6 @@ pub(crate) fn empty_completion_list() -> CompletionList {
 }
 
 pub(crate) fn completion(schema: String, params: CompletionParams) -> CompletionList {
-    if parse_schema_ast(&schema).is_err() {
-        warn!("Failed to parse schema AST in completion request.");
-        return empty_completion_list();
-    };
     let source_file = SourceFile::new_allocated(Arc::from(schema.into_boxed_str()));
 
     let position =
@@ -29,16 +26,11 @@ pub(crate) fn completion(schema: String, params: CompletionParams) -> Completion
             return empty_completion_list();
         };
 
-    let (connector, referential_integrity) = parse_configuration(source_file.as_str())
+    let (connector, relation_mode) = parse_configuration(source_file.as_str())
         .ok()
-        .and_then(|conf| conf.subject.datasources.into_iter().next())
-        .map(|datasource| (datasource.active_connector, datasource.referential_integrity()))
-        .unwrap_or_else(|| {
-            (
-                &datamodel::datamodel_connector::EmptyDatamodelConnector,
-                Default::default(),
-            )
-        });
+        .and_then(|conf| conf.datasources.into_iter().next())
+        .map(|datasource| (datasource.active_connector, datasource.relation_mode()))
+        .unwrap_or_else(|| (&psl::datamodel_connector::EmptyDatamodelConnector, Default::default()));
 
     let mut list = CompletionList {
         is_incomplete: false,
@@ -50,7 +42,7 @@ pub(crate) fn completion(schema: String, params: CompletionParams) -> Completion
         ParserDatabase::new(source_file, &mut diag)
     };
 
-    push_ast_completions(&mut list, connector, referential_integrity, &db, position);
+    push_ast_completions(&mut list, connector, relation_mode, &db, position);
 
     list
 }
@@ -61,7 +53,7 @@ pub(crate) fn completion(schema: String, params: CompletionParams) -> Completion
 fn push_ast_completions(
     completion_list: &mut CompletionList,
     connector: &'static dyn Connector,
-    referential_integrity: ReferentialIntegrity,
+    _relation_mode: RelationMode,
     db: &ParserDatabase,
     position: usize,
 ) {
@@ -70,7 +62,7 @@ fn push_ast_completions(
             _model_id,
             ast::ModelPosition::Field(_, ast::FieldPosition::Attribute("relation", _, Some(attr_name))),
         ) if attr_name == "onDelete" || attr_name == "onUpdate" => {
-            for referential_action in connector.referential_actions(&referential_integrity).iter() {
+            for referential_action in connector.referential_actions().iter() {
                 completion_list.items.push(CompletionItem {
                     label: referential_action.as_str().to_owned(),
                     kind: Some(CompletionItemKind::ENUM),

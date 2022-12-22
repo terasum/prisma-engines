@@ -5,7 +5,8 @@
 
 use crate::{api::GenericApi, commands, json_rpc::types::*, CoreResult};
 use enumflags2::BitFlags;
-use migration_connector::{ConnectorError, ConnectorHost, MigrationConnector};
+use migration_connector::{ConnectorError, ConnectorHost, MigrationConnector, Namespaces};
+use psl::parser_database::SourceFile;
 use std::{collections::HashMap, future::Future, path::Path, pin::Pin, sync::Arc};
 use tokio::sync::{mpsc, Mutex};
 use tracing_futures::Instrument;
@@ -17,8 +18,8 @@ use tracing_futures::Instrument;
 /// `connectors`. Each connector has its own async task, and communicates with the core through
 /// channels. That ensures that each connector is handling requests one at a time to avoid
 /// synchronization issues. You can think of it in terms of the actor model.
-pub struct EngineState {
-    initial_datamodel: Option<String>,
+pub(crate) struct EngineState {
+    initial_datamodel: Option<psl::ValidatedSchema>,
     host: Arc<dyn ConnectorHost>,
     // A map from either:
     //
@@ -46,10 +47,20 @@ impl EngineState {
     #[allow(missing_docs)]
     pub fn new(initial_datamodel: Option<String>, host: Option<Arc<dyn ConnectorHost>>) -> Self {
         EngineState {
-            initial_datamodel,
+            initial_datamodel: initial_datamodel.map(|s| psl::validate(s.into())),
             host: host.unwrap_or_else(|| Arc::new(migration_connector::EmptyHost)),
             connectors: Default::default(),
         }
+    }
+
+    fn namespaces(&self) -> Option<Namespaces> {
+        self.initial_datamodel
+            .as_ref()
+            .and_then(|schema| schema.configuration.datasources.first())
+            .and_then(|ds| {
+                let mut names = ds.namespaces.iter().map(|(ns, _)| ns.to_owned()).collect();
+                Namespaces::from_vec(&mut names)
+            })
     }
 
     async fn with_connector_from_schema_path<O: Send + 'static>(
@@ -175,7 +186,7 @@ impl EngineState {
             return Err(ConnectorError::from_msg("Missing --datamodel".to_owned()));
         };
 
-        self.with_connector_for_schema(schema, None, f).await
+        self.with_connector_for_schema(schema.db.source(), None, f).await
     }
 }
 
@@ -224,7 +235,7 @@ impl GenericApi for EngineState {
         let url: String = match &params.datasource_type {
             DbExecuteDatasourceType::Url(UrlContainer { url }) => url.clone(),
             DbExecuteDatasourceType::Schema(SchemaContainer { schema: file_path }) => {
-                let mut schema_file = std::fs::File::open(&file_path)
+                let mut schema_file = std::fs::File::open(file_path)
                     .map_err(|err| ConnectorError::from_source(err, "Opening Prisma schema file."))?;
                 let mut schema_string = String::new();
                 schema_file
@@ -252,8 +263,13 @@ impl GenericApi for EngineState {
     }
 
     async fn dev_diagnostic(&self, input: DevDiagnosticInput) -> CoreResult<DevDiagnosticOutput> {
-        self.with_default_connector(Box::new(|connector| {
-            Box::pin(commands::dev_diagnostic(input, connector).instrument(tracing::info_span!("DevDiagnostic")))
+        let namespaces = self.namespaces();
+        self.with_default_connector(Box::new(move |connector| {
+            Box::pin(async move {
+                commands::dev_diagnostic(input, namespaces, connector)
+                    .instrument(tracing::info_span!("DevDiagnostic"))
+                    .await
+            })
         }))
         .await
     }
@@ -271,11 +287,13 @@ impl GenericApi for EngineState {
         &self,
         input: commands::DiagnoseMigrationHistoryInput,
     ) -> CoreResult<commands::DiagnoseMigrationHistoryOutput> {
-        self.with_default_connector(Box::new(|connector| {
-            Box::pin(
-                commands::diagnose_migration_history(input, connector)
-                    .instrument(tracing::info_span!("DiagnoseMigrationHistory")),
-            )
+        let namespaces = self.namespaces();
+        self.with_default_connector(Box::new(move |connector| {
+            Box::pin(async move {
+                commands::diagnose_migration_history(input, namespaces, connector)
+                    .instrument(tracing::info_span!("DiagnoseMigrationHistory"))
+                    .await
+            })
         }))
         .await
     }
@@ -300,6 +318,41 @@ impl GenericApi for EngineState {
         self.with_default_connector(Box::new(|connector| {
             Box::pin(commands::evaluate_data_loss(input, connector).instrument(tracing::info_span!("EvaluateDataLoss")))
         }))
+        .await
+    }
+
+    async fn introspect(&self, params: IntrospectParams) -> CoreResult<IntrospectResult> {
+        let source_file = SourceFile::new_allocated(Arc::from(params.schema.clone().into_boxed_str()));
+        let schema = psl::parse_schema(source_file).map_err(ConnectorError::new_schema_parser_error)?;
+        self.with_connector_for_schema(
+            &params.schema,
+            None,
+            Box::new(move |connector| {
+                let composite_type_depth = From::from(params.composite_type_depth);
+                let ctx = if params.force {
+                    migration_connector::IntrospectionContext::new_config_only(schema, composite_type_depth)
+                } else {
+                    migration_connector::IntrospectionContext::new(schema, composite_type_depth)
+                };
+                Box::pin(async move {
+                    let result = connector.introspect(&ctx).await?;
+
+                    Ok(IntrospectResult {
+                        datamodel: result.data_model,
+                        version: format!("{:?}", result.version),
+                        warnings: result
+                            .warnings
+                            .into_iter()
+                            .map(|warning| crate::json_rpc::types::IntrospectionWarning {
+                                code: warning.code,
+                                message: warning.message,
+                                affected: warning.affected,
+                            })
+                            .collect(),
+                    })
+                })
+            }),
+        )
         .await
     }
 
@@ -342,9 +395,9 @@ impl GenericApi for EngineState {
 
     async fn reset(&self) -> CoreResult<()> {
         tracing::debug!("Resetting the database.");
-
+        let namespaces = self.namespaces();
         self.with_default_connector(Box::new(move |connector| {
-            Box::pin(MigrationConnector::reset(connector, false).instrument(tracing::info_span!("Reset")))
+            Box::pin(MigrationConnector::reset(connector, false, namespaces).instrument(tracing::info_span!("Reset")))
         }))
         .await?;
         Ok(())

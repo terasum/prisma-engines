@@ -1,15 +1,35 @@
+//! Handles the introspection from SQL database schema definition to
+//! the Prisma Schema Language (PSL).
+//!
+//! The introspection consists the following parts:
+//!
+//! - Describe the database schema using the `sql-schema-describer`.
+//! - Combine the describe result with a parsed and validated PSL
+//!   definition, happens in [`introspection_map::IntrospectionMap`]
+//! - Using the `Pair` apis, provide information about the
+//!   data model for rendering, see [`pair::Pair`] and its submodules.
+//! - By using the `Pair` apis, create a rendering structure together
+//!   with possible warnings utilizing the `datamodel-renderer`
+//!   crate in the [`rendering`] module.
+//! - Check the Prisma version to warn and guide people upgrading
+//!   from older versions of Prisma.
+//! - Convert the rendering structure into a string. Reformat the
+//!   string using the `psl::reformat` module.
+//!
+//! A good place to start digging into the mechanics of this crate is
+//! to start reading from the
+//! [`SqlIntrospectionConnector::introspect`] method.
+
 #![allow(clippy::vec_init_then_push)]
 #![allow(clippy::ptr_arg)] // remove after https://github.com/rust-lang/rust-clippy/issues/8482 is fixed and shipped
 
-pub mod calculate_datamodel; // only exported to be able to unit test it
+pub mod datamodel_calculator; // only exported to be able to unit test it
+mod pair;
 
-mod commenting_out_guardrails;
-mod defaults;
 mod error;
-mod introspection;
 mod introspection_helpers;
-mod prisma_1_defaults;
-mod re_introspection;
+mod introspection_map;
+mod rendering;
 mod sanitize_datamodel_names;
 mod schema_describer_loading;
 mod version_checker;
@@ -17,14 +37,17 @@ mod warnings;
 
 pub use error::*;
 
-use datamodel::{common::preview_features::PreviewFeature, dml::Datamodel};
+use self::sanitize_datamodel_names::*;
 use enumflags2::BitFlags;
 use introspection_connector::{
     ConnectorError, ConnectorResult, DatabaseMetadata, ErrorKind, IntrospectionConnector, IntrospectionContext,
     IntrospectionResult,
 };
-use quaint::prelude::SqlFamily;
-use quaint::{prelude::ConnectionInfo, single::Quaint};
+use psl::PreviewFeature;
+use quaint::{
+    prelude::{ConnectionInfo, SqlFamily},
+    single::Quaint,
+};
 use schema_describer_loading::load_describer;
 use sql_schema_describer::{SqlSchema, SqlSchemaDescriberBackend};
 use std::future::Future;
@@ -104,19 +127,15 @@ impl SqlIntrospectionConnector {
     }
 
     /// Exported for tests
-    pub async fn describe(&self, provider: Option<&str>) -> SqlIntrospectionResult<SqlSchema> {
-        Ok(self
-            .describer(provider)
-            .await?
-            .describe(self.connection.connection_info().schema_name())
-            .await?)
+    pub async fn describe(&self, provider: Option<&str>, namespaces: &[&str]) -> SqlIntrospectionResult<SqlSchema> {
+        Ok(self.describer(provider).await?.describe(namespaces).await?)
     }
 
     async fn version(&self) -> SqlIntrospectionResult<String> {
         Ok(self
             .describer(None)
             .await?
-            .version(self.connection.connection_info().schema_name())
+            .version()
             .await?
             .unwrap_or_else(|| "Database version information not available.".into()))
     }
@@ -133,7 +152,9 @@ impl IntrospectionConnector for SqlIntrospectionConnector {
     }
 
     async fn get_database_description(&self) -> ConnectorResult<String> {
-        let sql_schema = self.catch(self.describe(None)).await?;
+        let sql_schema = self
+            .catch(self.describe(None, &[self.connection.connection_info().schema_name()]))
+            .await?;
         tracing::debug!("SQL Schema Describer is done: {:?}", sql_schema);
         let description = serde_json::to_string_pretty(&sql_schema).unwrap();
         Ok(description)
@@ -146,19 +167,25 @@ impl IntrospectionConnector for SqlIntrospectionConnector {
         Ok(description)
     }
 
-    async fn introspect(
-        &self,
-        previous_data_model: &Datamodel,
-        ctx: IntrospectionContext,
-    ) -> ConnectorResult<IntrospectionResult> {
-        let sql_schema = self.catch(self.describe(Some(ctx.source.active_provider))).await?;
+    async fn introspect(&self, ctx: &IntrospectionContext) -> ConnectorResult<IntrospectionResult> {
+        let namespaces = &mut ctx
+            .datasource()
+            .namespaces
+            .iter()
+            .map(|(ns, _)| ns.as_ref())
+            .collect::<Vec<&str>>();
 
-        let introspection_result = calculate_datamodel::calculate_datamodel(&sql_schema, previous_data_model, ctx)
-            .map_err(|sql_introspection_error| {
-                sql_introspection_error.into_connector_error(self.connection.connection_info())
-            })?;
+        if namespaces.is_empty() {
+            namespaces.push(self.connection.connection_info().schema_name())
+        }
 
-        Ok(introspection_result)
+        let sql_schema = self
+            .catch(self.describe(Some(ctx.datasource().active_provider), namespaces))
+            .await?;
+
+        datamodel_calculator::calculate(&sql_schema, ctx).map_err(|sql_introspection_error| {
+            sql_introspection_error.into_connector_error(self.connection.connection_info())
+        })
     }
 }
 
@@ -168,7 +195,7 @@ trait SqlFamilyTrait {
 
 impl SqlFamilyTrait for IntrospectionContext {
     fn sql_family(&self) -> SqlFamily {
-        match self.source.active_provider {
+        match self.datasource().active_provider {
             "postgresql" => SqlFamily::Postgres,
             "cockroachdb" => SqlFamily::Postgres,
             "sqlite" => SqlFamily::Sqlite,
@@ -179,7 +206,7 @@ impl SqlFamilyTrait for IntrospectionContext {
     }
 }
 
-impl SqlFamilyTrait for calculate_datamodel::CalculateDatamodelContext<'_> {
+impl SqlFamilyTrait for datamodel_calculator::InputContext<'_> {
     fn sql_family(&self) -> SqlFamily {
         self.sql_family
     }

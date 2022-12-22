@@ -1,13 +1,12 @@
 use std::time::Instant;
 
 use super::pipeline::QueryPipeline;
-use crate::{
-    IrSerializer, Operation, QueryGraph, QueryGraphBuilder, QueryInterpreter, ResponseData,
-    PRISMA_CLIENT_QUERIES_HISTOGRAM_MS, PRISMA_CLIENT_QUERIES_TOTAL,
-};
+use crate::{IrSerializer, Operation, QueryGraph, QueryGraphBuilder, QueryInterpreter, ResponseData};
 use connector::{Connection, ConnectionLike, Connector};
 use futures::future;
-use metrics::{histogram, increment_counter};
+use query_engine_metrics::{
+    histogram, increment_counter, metrics, PRISMA_CLIENT_QUERIES_HISTOGRAM_MS, PRISMA_CLIENT_QUERIES_TOTAL,
+};
 use schema::QuerySchemaRef;
 use tracing::Instrument;
 use tracing_futures::WithSubscriber;
@@ -45,16 +44,25 @@ pub async fn execute_many_operations(
 
     let mut results = Vec::with_capacity(queries.len());
 
-    for (query_graph, serializer) in queries {
+    for (i, (query_graph, serializer)) in queries.into_iter().enumerate() {
         increment_counter!(PRISMA_CLIENT_QUERIES_TOTAL);
         let operation_timer = Instant::now();
         let interpreter = QueryInterpreter::new(conn);
         let result = QueryPipeline::new(query_graph, interpreter, serializer)
             .execute(trace_id.clone())
-            .await?;
+            .await;
 
         histogram!(PRISMA_CLIENT_QUERIES_HISTOGRAM_MS, operation_timer.elapsed());
-        results.push(Ok(result));
+
+        match result {
+            Ok(result) => results.push(Ok(result)),
+            Err(error) => {
+                return Err(crate::CoreError::BatchError {
+                    request_idx: i,
+                    error: Box::new(error),
+                });
+            }
+        }
     }
 
     Ok(results)
@@ -158,9 +166,7 @@ async fn execute_on(
 ) -> crate::Result<ResponseData> {
     increment_counter!(PRISMA_CLIENT_QUERIES_TOTAL);
     let interpreter = QueryInterpreter::new(conn);
-    let result = QueryPipeline::new(graph, interpreter, serializer)
+    QueryPipeline::new(graph, interpreter, serializer)
         .execute(trace_id)
-        .await;
-
-    result
+        .await
 }

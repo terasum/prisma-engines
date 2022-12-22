@@ -58,6 +58,11 @@ impl ConnectorError {
                     message: format!("{}", message),
                 },
             )),
+            ErrorKind::QueryInvalidInput(message) => Some(KnownError::new(
+                user_facing_errors::query_engine::DatabaseAssertionViolation {
+                    database_error: message.to_owned(),
+                },
+            )),
             ErrorKind::UnsupportedFeature(feature) => {
                 Some(KnownError::new(user_facing_errors::query_engine::UnsupportedFeature {
                     feature: feature.clone(),
@@ -89,6 +94,9 @@ impl ConnectorError {
             )),
             ErrorKind::TransactionAborted { message } => Some(KnownError::new(
                 user_facing_errors::query_engine::InteractiveTransactionError { error: message.clone() },
+            )),
+            ErrorKind::TransactionWriteConflict => Some(KnownError::new(
+                user_facing_errors::query_engine::TransactionWriteConflict {},
             )),
             ErrorKind::MongoReplicaSetRequired => Some(KnownError::new(
                 user_facing_errors::query_engine::MongoReplicaSetRequired {},
@@ -171,6 +179,9 @@ pub enum ErrorKind {
     #[error("Conversion error: {}", _0)]
     ConversionError(anyhow::Error),
 
+    #[error("Invalid input provided to query: {}", _0)]
+    QueryInvalidInput(String),
+
     #[error("Conversion error: {}", _0)]
     InternalConversionError(String),
 
@@ -216,6 +227,12 @@ pub enum ErrorKind {
 
     #[error("{}", message)]
     TransactionAlreadyClosed { message: String },
+
+    #[error("Transaction write conflict")]
+    TransactionWriteConflict,
+
+    #[error("ROLLBACK statement has no corresponding BEGIN statement")]
+    RollbackWithoutBegin,
 
     #[error("The query parameter limit supported by your database is exceeded: {0}.")]
     QueryParameterLimitExceeded(String),

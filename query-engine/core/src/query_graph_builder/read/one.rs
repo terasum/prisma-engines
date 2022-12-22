@@ -1,11 +1,24 @@
 use super::*;
-use crate::{query_document::*, ReadQuery, RecordQuery};
+use crate::{query_document::*, QueryOption, QueryOptions, ReadQuery, RecordQuery};
 use prisma_models::ModelRef;
 use schema_builder::constants::args;
 use std::convert::TryInto;
 
+pub fn find_unique(field: ParsedField, model: ModelRef) -> QueryGraphBuilderResult<ReadQuery> {
+    find_unique_with_options(field, model, QueryOptions::none())
+}
+
+pub fn find_unique_or_throw(field: ParsedField, model: ModelRef) -> QueryGraphBuilderResult<ReadQuery> {
+    find_unique_with_options(field, model, QueryOption::ThrowOnEmpty.into())
+}
+
 /// Builds a read query from a parsed incoming read query field.
-pub fn find_unique(mut field: ParsedField, model: ModelRef) -> QueryGraphBuilderResult<ReadQuery> {
+#[inline]
+pub fn find_unique_with_options(
+    mut field: ParsedField,
+    model: ModelRef,
+    options: QueryOptions,
+) -> QueryGraphBuilderResult<ReadQuery> {
     let filter = match field.arguments.lookup(args::WHERE) {
         Some(where_arg) => {
             let arg: ParsedInputMap = where_arg.value.try_into()?;
@@ -19,7 +32,7 @@ pub fn find_unique(mut field: ParsedField, model: ModelRef) -> QueryGraphBuilder
     let model = model;
     let nested_fields = field.nested_fields.unwrap().fields;
     let (aggr_fields_pairs, nested_fields) = extractors::extract_nested_rel_aggr_selections(nested_fields);
-    let aggregation_selections: Vec<_> = utils::collect_relation_aggr_selections(&aggr_fields_pairs, &model);
+    let aggregation_selections = utils::collect_relation_aggr_selections(aggr_fields_pairs, &model)?;
     let selection_order: Vec<String> = utils::collect_selection_order(&nested_fields);
     let selected_fields = utils::collect_selected_fields(&nested_fields, None, &model);
     let nested = utils::collect_nested_queries(nested_fields, &model)?;
@@ -34,5 +47,6 @@ pub fn find_unique(mut field: ParsedField, model: ModelRef) -> QueryGraphBuilder
         nested,
         selection_order,
         aggregation_selections,
+        options,
     }))
 }

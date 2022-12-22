@@ -129,13 +129,20 @@ fn render_raw_sql(
         SqlMigrationStep::AlterEnum(alter_enum) => renderer.render_alter_enum(alter_enum, schemas),
         SqlMigrationStep::RedefineTables(redefine_tables) => renderer.render_redefine_tables(redefine_tables, schemas),
         SqlMigrationStep::CreateEnum(enum_id) => renderer.render_create_enum(schemas.next.walk(*enum_id)),
+        SqlMigrationStep::CreateSchema(namespace_id) => {
+            vec![renderer.render_create_namespace(schemas.next.walk(*namespace_id))]
+        }
         SqlMigrationStep::DropEnum(enum_id) => renderer.render_drop_enum(schemas.previous.walk(*enum_id)),
         SqlMigrationStep::CreateTable { table_id } => {
             let table = schemas.next.walk(*table_id);
 
             vec![renderer.render_create_table(table)]
         }
-        SqlMigrationStep::DropTable { table_id } => renderer.render_drop_table(schemas.previous.walk(*table_id).name()),
+        SqlMigrationStep::DropTable { table_id } => {
+            let table = schemas.previous.walk(*table_id);
+
+            renderer.render_drop_table(table.namespace(), table.name())
+        }
         SqlMigrationStep::RedefineIndex { index } => renderer.render_drop_and_recreate_index(schemas.walk(*index)),
         SqlMigrationStep::AddForeignKey { foreign_key_id } => {
             let foreign_key = schemas.next.walk(*foreign_key_id);
@@ -168,6 +175,15 @@ fn render_raw_sql(
         SqlMigrationStep::RenameForeignKey { foreign_key_id } => {
             let fks = schemas.walk(*foreign_key_id);
             vec![renderer.render_rename_foreign_key(fks)]
+        }
+        SqlMigrationStep::CreateExtension(create_extension) => {
+            renderer.render_create_extension(create_extension, schemas.next)
+        }
+        SqlMigrationStep::AlterExtension(alter_extension) => {
+            renderer.render_alter_extension(alter_extension, Pair::new(schemas.previous, schemas.next))
+        }
+        SqlMigrationStep::DropExtension(drop_extension) => {
+            renderer.render_drop_extension(drop_extension, schemas.previous)
         }
     }
 }

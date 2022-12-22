@@ -31,11 +31,14 @@ buildkite-script-*
 
 # Nix specific
 .direnv/
+/.envrc.local
 
 # Dev setup
 datamodel_v2.prisma
 dev_datamodel.prisma
-target/
 .tmp/
+/target/
+/result
 
 dmmf.json
+graph.dot

@@ -5,8 +5,12 @@ use serde::{Deserialize, Serialize};
 pub struct TableId(pub(crate) u32);
 
 /// The identifier for an enum in a SqlSchema.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct EnumId(pub(crate) u32);
+
+/// The identifier for an enum variant in a SqlSchema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EnumVariantId(pub(crate) u32);
 
 /// The identifier for a column in a SqlSchema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -20,9 +24,13 @@ pub struct IndexId(pub(crate) u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IndexColumnId(pub(crate) u32);
 
-/// The identifier for a ForeignKey in the schema.
+/// The identifier for a foreign key in the schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ForeignKeyId(pub(crate) u32);
+
+/// The identifier for a namespace in the schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
+pub struct NamespaceId(pub(crate) u32);
 
 /// The identifier for a user defined type in the database.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -31,3 +39,7 @@ pub struct UdtId(pub(crate) u32);
 /// The identifier for a view in the database.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ViewId(pub(crate) u32);
+
+/// The identifier for a default value in the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Serialize, Deserialize, Ord, Hash)]
+pub struct DefaultValueId(pub(crate) u32);

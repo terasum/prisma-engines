@@ -10,6 +10,7 @@ pub enum RawError {
         expected: usize,
         actual: usize,
     },
+    QueryInvalidInput(String),
     ConnectionClosed,
     Database {
         code: Option<String>,
@@ -26,6 +27,7 @@ impl From<RawError> for SqlError {
             RawError::IncorrectNumberOfParameters { expected, actual } => {
                 Self::IncorrectNumberOfParameters { expected, actual }
             }
+            RawError::QueryInvalidInput(message) => Self::QueryInvalidInput(message),
             RawError::UnsupportedColumnType { column_type } => Self::RawError {
                 code: String::from("N/A"),
                 message: format!(
@@ -55,6 +57,7 @@ impl From<quaint::error::Error> for RawError {
             quaint::error::ErrorKind::UnsupportedColumnType { column_type } => Self::UnsupportedColumnType {
                 column_type: column_type.to_owned(),
             },
+            quaint::error::ErrorKind::QueryInvalidInput(message) => Self::QueryInvalidInput(message.to_owned()),
             _ => Self::Database {
                 code: e.original_code().map(ToString::to_string),
                 message: e.original_message().map(ToString::to_string),
@@ -98,6 +101,9 @@ pub enum SqlError {
 
     #[error("Error querying the database: {}", _0)]
     QueryError(Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("Invalid input provided to query: {}", _0)]
+    QueryInvalidInput(String),
 
     #[error("The column value was different from the model")]
     ColumnReadFailure(Box<dyn std::error::Error + Send + Sync>),
@@ -159,6 +165,12 @@ pub enum SqlError {
     #[error("{}", _0)]
     InvalidIsolationLevel(String),
 
+    #[error("Transaction write conflict")]
+    TransactionWriteConflict,
+
+    #[error("ROLLBACK statement has no corresponding BEGIN statement")]
+    RollbackWithoutBegin,
+
     #[error("Query parameter limit exceeded error: {0}.")]
     QueryParameterLimitExceeded(String),
 
@@ -215,6 +227,7 @@ impl SqlError {
                 child_name,
             }),
             SqlError::ConversionError(e) => ConnectorError::from_kind(ErrorKind::ConversionError(e)),
+            SqlError::QueryInvalidInput(e) => ConnectorError::from_kind(ErrorKind::QueryInvalidInput(e)),
             SqlError::IncorrectNumberOfParameters { expected, actual } => {
                 ConnectorError::from_kind(ErrorKind::IncorrectNumberOfParameters { expected, actual })
             }
@@ -254,6 +267,14 @@ impl SqlError {
                 )),
                 kind: ErrorKind::TransactionAlreadyClosed { message },
             },
+
+            SqlError::TransactionWriteConflict => ConnectorError {
+                user_facing_error: Some(user_facing_errors::KnownError::new(
+                    user_facing_errors::query_engine::TransactionWriteConflict {},
+                )),
+                kind: ErrorKind::TransactionWriteConflict,
+            },
+            SqlError::RollbackWithoutBegin => ConnectorError::from_kind(ErrorKind::RollbackWithoutBegin),
             SqlError::QueryParameterLimitExceeded(e) => {
                 ConnectorError::from_kind(ErrorKind::QueryParameterLimitExceeded(e))
             }
@@ -273,6 +294,7 @@ impl From<quaint::error::Error> for SqlError {
     fn from(e: quaint::error::Error) -> Self {
         match QuaintKind::from(e) {
             QuaintKind::QueryError(qe) => Self::QueryError(qe),
+            QuaintKind::QueryInvalidInput(qe) => Self::QueryInvalidInput(qe),
             e @ QuaintKind::IoError(_) => Self::ConnectionError(e),
             QuaintKind::NotFound => Self::RecordDoesNotExist,
             QuaintKind::UniqueConstraintViolation { constraint } => Self::UniqueConstraintViolation {
@@ -293,6 +315,8 @@ impl From<quaint::error::Error> for SqlError {
             QuaintKind::TableDoesNotExist { table } => SqlError::TableDoesNotExist(format!("{}", table)),
             QuaintKind::ConnectionClosed => SqlError::ConnectionClosed,
             QuaintKind::InvalidIsolationLevel(msg) => Self::InvalidIsolationLevel(msg),
+            QuaintKind::TransactionWriteConflict => Self::TransactionWriteConflict,
+            QuaintKind::RollbackWithoutBegin => Self::RollbackWithoutBegin,
             e @ QuaintKind::UnsupportedColumnType { .. } => SqlError::ConversionError(e.into()),
             e @ QuaintKind::TransactionAlreadyClosed(_) => SqlError::TransactionAlreadyClosed(format!("{}", e)),
             e @ QuaintKind::IncorrectNumberOfParameters { .. } => SqlError::QueryError(e.into()),

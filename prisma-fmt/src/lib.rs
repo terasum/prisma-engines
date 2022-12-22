@@ -6,9 +6,9 @@ mod native;
 mod preview;
 mod text_document_completion;
 
-use datamodel::parser_database::ast;
 use log::*;
 use lsp_types::{Position, Range};
+use psl::parser_database::ast;
 
 /// The API is modelled on an LSP [completion
 /// request](https://github.com/microsoft/language-server-protocol/blob/gh-pages/_specifications/specification-3-16.md#textDocument_completion).
@@ -57,7 +57,7 @@ pub fn format(schema: &str, params: &str) -> String {
         }
     };
 
-    datamodel::reformat(schema, params.options.tab_size as usize).unwrap_or_else(|| schema.to_owned())
+    psl::reformat(schema, params.options.tab_size as usize).unwrap_or_else(|| schema.to_owned())
 }
 
 pub fn lint(schema: String) -> String {
@@ -114,7 +114,7 @@ pub fn referential_actions(schema: String) -> String {
 /// type GetConfigResponse = GetConfigErrorResponse | GetConfigSuccessResponse
 ///
 /// ```
-pub fn get_config(get_config_params: String) -> String {
+pub fn get_config(get_config_params: String) -> Result<String, String> {
     get_config::get_config(&get_config_params)
 }
 
@@ -168,18 +168,18 @@ pub(crate) fn range_to_span(range: Range, document: &str) -> ast::Span {
 
 /// Gives the LSP position right after the given span.
 pub(crate) fn position_after_span(span: ast::Span, document: &str) -> Position {
-    offset_to_position(span.end - 1, document).unwrap()
+    offset_to_position(span.end - 1, document)
 }
 
 /// Converts a byte offset to an LSP position, if the given offset
 /// does not overflow the document.
-pub(crate) fn offset_to_position(offset: usize, document: &str) -> Option<Position> {
+pub(crate) fn offset_to_position(offset: usize, document: &str) -> Position {
     let mut position = Position::default();
 
     for (i, chr) in document.chars().enumerate() {
         match chr {
             _ if i == offset => {
-                return Some(position);
+                return position;
             }
             '\n' => {
                 position.character = 0;
@@ -191,7 +191,7 @@ pub(crate) fn offset_to_position(offset: usize, document: &str) -> Option<Positi
         }
     }
 
-    None
+    position
 }
 
 #[cfg(test)]

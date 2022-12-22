@@ -742,7 +742,7 @@ fn filter_to_types(api: &TestApi, to_types: &'static [&'static str]) -> Cow<'sta
 
 #[test_connector(tags(Mysql))]
 fn safe_casts_with_existing_data_should_work(api: TestApi) {
-    let connector = sql_datamodel_connector::MYSQL;
+    let connector = psl::builtin_connectors::MYSQL;
     let mut dm1 = String::with_capacity(256);
     let mut dm2 = String::with_capacity(256);
     let colnames = colnames_for_cases(SAFE_CASTS);
@@ -787,7 +787,7 @@ fn safe_casts_with_existing_data_should_work(api: TestApi) {
 
 #[test_connector(tags(Mysql))]
 fn risky_casts_with_existing_data_should_warn(api: TestApi) {
-    let connector = sql_datamodel_connector::MYSQL;
+    let connector = psl::builtin_connectors::MYSQL;
     let mut dm1 = String::with_capacity(256);
     let mut dm2 = String::with_capacity(256);
     let colnames = colnames_for_cases(RISKY_CASTS);
@@ -849,7 +849,7 @@ fn risky_casts_with_existing_data_should_warn(api: TestApi) {
 
 #[test_connector(tags(Mysql))]
 fn impossible_casts_with_existing_data_should_warn(api: TestApi) {
-    let connector = sql_datamodel_connector::MYSQL;
+    let connector = psl::builtin_connectors::MYSQL;
     let mut dm1 = String::with_capacity(256);
     let mut dm2 = String::with_capacity(256);
     let colnames = colnames_for_cases(IMPOSSIBLE_CASTS);
@@ -909,7 +909,7 @@ fn impossible_casts_with_existing_data_should_warn(api: TestApi) {
     }
 }
 
-#[test_connector(tags(Mysql), preview_features("referentialIntegrity"))]
+#[test_connector(tags(Mysql))]
 fn typescript_starter_schema_with_native_types_is_idempotent(api: TestApi) {
     let dm = r#"
         model Post {
@@ -965,7 +965,7 @@ fn typescript_starter_schema_with_native_types_is_idempotent(api: TestApi) {
         .assert_no_steps();
 }
 
-#[test_connector(tags(Mysql), preview_features("referentialIntegrity"))]
+#[test_connector(tags(Mysql))]
 fn typescript_starter_schema_with_different_native_types_is_idempotent(api: TestApi) {
     let dm = r#"
         model Post {
@@ -1021,6 +1021,38 @@ fn typescript_starter_schema_with_different_native_types_is_idempotent(api: Test
         .assert_has_executed_steps();
     api.schema_push_w_datasource(dm2)
         .migration_id(Some("third")) // TODO (matthias) why does this work??
+        .send()
+        .assert_green()
+        .assert_no_steps();
+}
+
+#[test_connector(tags(Mysql))]
+fn time_zero_is_idempotent(api: TestApi) {
+    let dm1 = indoc::indoc! {r#"
+        model Class {
+          id    Int      @id
+          when  DateTime @db.Time(0)
+        }
+    "#};
+
+    api.schema_push_w_datasource(dm1).send().assert_green();
+    api.schema_push_w_datasource(dm1)
+        .send()
+        .assert_green()
+        .assert_no_steps();
+}
+
+#[test_connector(tags(Mysql))]
+fn time_is_idempotent(api: TestApi) {
+    let dm1 = indoc::indoc! {r#"
+        model Class {
+          id    Int      @id
+          when  DateTime @db.Time
+        }
+    "#};
+
+    api.schema_push_w_datasource(dm1).send().assert_green();
+    api.schema_push_w_datasource(dm1)
         .send()
         .assert_green()
         .assert_no_steps();

@@ -35,7 +35,7 @@ mod transactional {
             r#"mutation { createOneModelA(data: { id: 2 }) { id }}"#.to_string(),
         ];
 
-        let batch_results = runner.batch(queries, true).await?;
+        let batch_results = runner.batch(queries, true, None).await?;
         insta::assert_snapshot!(
             batch_results.to_string(),
             @r###"{"batchResult":[{"data":{"createOneModelA":{"id":1}}},{"data":{"createOneModelA":{"id":2}}}]}"###
@@ -51,13 +51,28 @@ mod transactional {
             r#"mutation { createOneModelA(data: { id: 1 }) { id }}"#.to_string(),
         ];
 
-        let batch_results = runner.batch(queries, true).await?;
+        let batch_results = runner.batch(queries, true, None).await?;
         batch_results.assert_failure(2002, None);
 
         insta::assert_snapshot!(
             run_query!(&runner, r#"{ findManyModelA { id } }"#),
             @r###"{"data":{"findManyModelA":[]}}"###
         );
+
+        Ok(())
+    }
+
+    #[connector_test]
+    async fn batch_request_idx(runner: Runner) -> TestResult<()> {
+        let queries = vec![
+            r#"mutation { createOneModelA(data: { id: 1 }) { id }}"#.to_string(),
+            r#"mutation { createOneModelA(data: { id: 1 }) { id }}"#.to_string(),
+        ];
+
+        let batch_results = runner.batch(queries, true, None).await?;
+        let batch_request_idx = batch_results.errors().get(0).unwrap().batch_request_idx();
+
+        assert_eq!(batch_request_idx, Some(1usize));
 
         Ok(())
     }
@@ -78,12 +93,47 @@ mod transactional {
             r#"mutation { createOneModelB(data: { id: 1, a: { create: { id: 1 } } }) { id }}"#.to_string(), // ModelB gets created before ModelA because of inlining,
         ];
 
-        let batch_results = runner.batch(queries, true).await?;
+        let batch_results = runner.batch(queries, true, None).await?;
         batch_results.assert_failure(2002, None);
 
         insta::assert_snapshot!(
             run_query!(&runner, r#"{ findManyModelB { id } }"#),
             @r###"{"data":{"findManyModelB":[]}}"###
+        );
+
+        Ok(())
+    }
+
+    #[connector_test(exclude(MongoDb))]
+    async fn valid_isolation_level(runner: Runner) -> TestResult<()> {
+        let queries = vec![r#"mutation { createOneModelB(data: { id: 1 }) { id }}"#.to_string()];
+
+        let batch_results = runner.batch(queries, true, Some("Serializable".into())).await?;
+
+        insta::assert_snapshot!(batch_results.to_string(), @r###"{"batchResult":[{"data":{"createOneModelB":{"id":1}}}]}"###);
+
+        Ok(())
+    }
+
+    #[connector_test(exclude(MongoDb))]
+    async fn invalid_isolation_level(runner: Runner) -> TestResult<()> {
+        let queries = vec![r#"mutation { createOneModelB(data: { id: 1 }) { id }}"#.to_string()];
+
+        let batch_results = runner.batch(queries, true, Some("NotALevel".into())).await?;
+
+        batch_results.assert_failure(2023, Some("Invalid isolation level `NotALevel`".into()));
+
+        Ok(())
+    }
+
+    #[connector_test(only(MongoDb))]
+    async fn isolation_level_mongo(runner: Runner) -> TestResult<()> {
+        let queries = vec![r#"mutation { createOneModelB(data: { id: 1 }) { id }}"#.to_string()];
+
+        let batch_results = runner.batch(queries, true, Some("Serializable".into())).await?;
+        batch_results.assert_failure(
+            2026,
+            Some("Mongo does not support setting transaction isolation levels".into()),
         );
 
         Ok(())
@@ -109,7 +159,7 @@ mod transactional {
             r#"mutation { queryRaw(query: "SELECT * FROM \"ModelC\"", parameters: "[]") }"#.to_string(),
         ];
 
-        let batch_results = runner.batch(queries, true).await?;
+        let batch_results = runner.batch(queries, true, None).await?;
         insta::assert_snapshot!(
             batch_results.to_string(),
             @r###"{"batchResult":[{"data":{"createOneModelB":{"id":1}}},{"data":{"executeRaw":1}},{"data":{"queryRaw":[]}}]}"###
