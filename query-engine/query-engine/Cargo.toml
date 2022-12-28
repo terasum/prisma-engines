@@ -8,10 +8,13 @@ name = "query-engine"
 version = "0.1.0"
 
 [features]
-default = ["sql", "mongodb"]
 vendored-openssl = ["quaint/vendored-openssl"]
 
-sql = ["sql-connector"]
+mysql = ["sql-connector/mysql", "user-facing-errors/mysql", "query-core/mysql"]
+sqlite = ["sql-connector/sqlite", "user-facing-errors/sqlite", "query-core/sqlite"]
+mssql = ["sql-connector/mssql", "user-facing-errors/mssql", "query-core/mssql"]
+postgresql = ["sql-connector/postgresql", "user-facing-errors/postgresql", "query-core/postgresql"]
+
 mongodb = ["mongodb-connector", "query-core/mongodb"]
 
 [dependencies]

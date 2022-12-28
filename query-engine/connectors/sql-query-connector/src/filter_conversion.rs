@@ -276,6 +276,7 @@ fn convert_scalar_list_filter(
         ScalarListCondition::Contains(ConditionValue::Value(val)) => {
             comparable.compare_raw("@>", convert_list_pv(field, vec![val]))
         }
+        #[cfg(feature = "postgresql")]
         ScalarListCondition::Contains(ConditionValue::FieldRef(field_ref)) => {
             let field_ref_expr: Expression = field_ref.aliased_col(alias).into();
 
@@ -296,6 +297,8 @@ fn convert_scalar_list_filter(
         }
         ScalarListCondition::IsEmpty(true) => comparable.compare_raw("=", Value::Array(Some(vec![])).raw()),
         ScalarListCondition::IsEmpty(false) => comparable.compare_raw("<>", Value::Array(Some(vec![])).raw()),
+        // feature gate stuff
+        _ => unreachable!(),
     };
 
     ConditionTree::single(condition)
@@ -681,6 +684,7 @@ fn default_scalar_filter(
             }
             _ => comparable.in_selection(convert_pvs(fields, values)),
         },
+        #[cfg(feature = "postgresql")]
         ScalarCondition::In(ConditionListValue::FieldRef(field_ref)) => {
             // This code path is only reachable for connectors with `ScalarLists` capability
             comparable.equals(Expression::from(field_ref.aliased_col(alias)).any())
@@ -698,12 +702,11 @@ fn default_scalar_filter(
             }
             _ => comparable.not_in_selection(convert_pvs(fields, values)),
         },
+        #[cfg(feature = "postgresql")]
         ScalarCondition::NotIn(ConditionListValue::FieldRef(field_ref)) => {
             // This code path is only reachable for connectors with `ScalarLists` capability
             comparable.not_equals(Expression::from(field_ref.aliased_col(alias)).all())
         }
-        #[cfg(not(feature = "postgresql"))]
-        ScalarCondition::Search(_, _) => unreachable!(),
         #[cfg(feature = "postgresql")]
         ScalarCondition::Search(value, _) => {
             let query: String = value
@@ -714,8 +717,6 @@ fn default_scalar_filter(
 
             comparable.matches(query)
         }
-        #[cfg(not(feature = "postgresql"))]
-        ScalarCondition::NotSearch(_, _) => unreachable!(),
         #[cfg(feature = "postgresql")]
         ScalarCondition::NotSearch(value, _) => {
             let query: String = value
@@ -726,8 +727,8 @@ fn default_scalar_filter(
 
             comparable.not_matches(query)
         }
-        ScalarCondition::JsonCompare(_) => unreachable!(),
-        ScalarCondition::IsSet(_) => unreachable!(),
+        // feature-gated stuff
+        _ => unreachable!(),
     };
 
     ConditionTree::single(condition)
@@ -850,6 +851,7 @@ fn insensitive_scalar_filter(
                 )
             }
         },
+        #[cfg(feature = "postgresql")]
         ScalarCondition::In(ConditionListValue::FieldRef(field_ref)) => {
             // This code path is only reachable for connectors with `ScalarLists` capability
             comparable.compare_raw("ILIKE", Expression::from(field_ref.aliased_col(alias)).any())
@@ -881,12 +883,11 @@ fn insensitive_scalar_filter(
                 )
             }
         },
+        #[cfg(feature = "postgresql")]
         ScalarCondition::NotIn(ConditionListValue::FieldRef(field_ref)) => {
             // This code path is only reachable for connectors with `ScalarLists` capability
             comparable.compare_raw("NOT ILIKE", Expression::from(field_ref.aliased_col(alias)).all())
         }
-        #[cfg(not(feature = "postgresql"))]
-        ScalarCondition::Search(_, _) => unreachable!(),
         #[cfg(feature = "postgresql")]
         ScalarCondition::Search(value, _) => {
             let query: String = value
@@ -897,8 +898,6 @@ fn insensitive_scalar_filter(
 
             comparable.matches(query)
         }
-        #[cfg(not(feature = "postgresql"))]
-        ScalarCondition::NotSearch(_, _) => unreachable!(),
         #[cfg(feature = "postgresql")]
         ScalarCondition::NotSearch(value, _) => {
             let query: String = value
@@ -909,8 +908,8 @@ fn insensitive_scalar_filter(
 
             comparable.not_matches(query)
         }
-        ScalarCondition::JsonCompare(_) => unreachable!(),
-        ScalarCondition::IsSet(_) => unreachable!(),
+        // feature gate stuff
+        _ => unreachable!(),
     };
 
     ConditionTree::single(condition)
@@ -992,6 +991,7 @@ trait JsonFilterExt {
     ) -> Expression<'static>;
 }
 
+#[cfg(any(feature = "postgresql", feature = "mysql"))]
 impl JsonFilterExt for (Expression<'static>, Expression<'static>) {
     fn json_contains(
         self,

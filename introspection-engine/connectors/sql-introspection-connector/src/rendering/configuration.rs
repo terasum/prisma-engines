@@ -11,6 +11,7 @@ pub(super) fn render<'a>(config: &'a Configuration, schema: &'a SqlSchema) -> re
     let mut datasource = render::configuration::Datasource::from_psl(prev_ds);
 
     if prev_ds.active_connector.is_provider("postgres") {
+        #[cfg(feature = "postgresql")]
         super::postgres::add_extensions(&mut datasource, schema, config);
     }
 

@@ -40,17 +40,14 @@ uuid = { version = "1", features = ["serde"] }
 
 [workspace.dependencies.quaint]
 git = "https://github.com/prisma/quaint"
+rev = "6df49f14efe99696e577ffb9902c83b09bec8de2"
 features = [
   "bigdecimal",
   "chrono",
   "expose-drivers",
   "fmt-sql",
   "json",
-  "mssql",
-  "mysql",
   "pooled",
-  "postgresql",
-  "sqlite",
   "uuid",
 ]
 

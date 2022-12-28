@@ -13,6 +13,7 @@ use datamodel_renderer::{
 pub(crate) fn render<'a>(field: ScalarFieldPair<'a>, warnings: &mut Warnings) -> Option<renderer::DefaultValue<'a>> {
     let mut rendered = match field.default().kind() {
         Some(kind) => match kind {
+            #[cfg(feature = "postgresql")]
             DefaultKind::Sequence(sequence) => {
                 let mut fun = Function::new("sequence");
 

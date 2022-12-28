@@ -6,7 +6,6 @@ use psl::{
     dml,
     parser_database::walkers,
 };
-use sql::postgres::PostgresSchemaExt;
 use sql_schema_describer as sql;
 
 use super::Pair;
@@ -14,6 +13,7 @@ use super::Pair;
 pub(crate) type DefaultValuePair<'a> = Pair<'a, walkers::DefaultValueWalker<'a>, sql::ColumnWalker<'a>>;
 
 pub(crate) enum DefaultKind<'a> {
+    #[cfg(feature = "postgresql")]
     Sequence(&'a sql::postgres::Sequence),
     DbGenerated(Option<&'a str>),
     Autoincrement,
@@ -38,8 +38,9 @@ impl<'a> DefaultValuePair<'a> {
         let family = self.next.column_type_family();
 
         match (sql_kind, family) {
+            #[cfg(feature = "postgresql")]
             (Some(sql::DefaultKind::Sequence(name)), _) if self.context.is_cockroach() => {
-                let connector_data: &PostgresSchemaExt = self.context.schema.downcast_connector_data();
+                let connector_data: &sql::postgres::PostgresSchemaExt = self.context.schema.downcast_connector_data();
 
                 let sequence_idx = connector_data
                     .sequences
@@ -51,6 +52,7 @@ impl<'a> DefaultValuePair<'a> {
             (_, sql::ColumnTypeFamily::Int | sql::ColumnTypeFamily::BigInt) if self.next.is_autoincrement() => {
                 Some(DefaultKind::Autoincrement)
             }
+            #[cfg(feature = "postgresql")]
             (Some(sql::DefaultKind::Sequence(_)), _) => Some(DefaultKind::Autoincrement),
             (Some(sql::DefaultKind::UniqueRowid), _) => Some(DefaultKind::Autoincrement),
 

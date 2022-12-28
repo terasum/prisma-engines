@@ -8,12 +8,11 @@ name = "query-core"
 version = "0.1.0"
 
 [features]
-mongodb = ["mongodb-connector", "mongodb-client", "datamodel/mongodb"]
-sql = ["sql-connector", "datamodel/sql"]
-mysql = ["sql", "sql-connector/mysql"]
-sqlite = ["sql", "sql-connector/sqlite"]
-postgresql = ["sql", "sql-connector/postgresql"]
-mssql = ["sql", "sql-connector/mssql"]
+mongodb = ["mongodb-connector", "mongodb-client"]
+mysql = ["sql-connector/mysql"]
+sqlite = ["sql-connector/sqlite"]
+postgresql = ["sql-connector/postgresql"]
+mssql = ["sql-connector/mssql"]
 
 [dependencies]
 async-trait = "0.1"
@@ -23,7 +22,7 @@ chrono = "0.4"
 connection-string = "0.1"
 connector = { path = "../connectors/query-connector", package = "query-connector" }
 crossbeam-queue = "0.3.5"
-mongodb-client = { path = "../../libs/mongodb-client/" }
+mongodb-client = { path = "../../libs/mongodb-client/", optional = true }
 psl.workspace = true
 futures = "0.3"
 indexmap = { version = "1.7", features = ["serde-1"] }

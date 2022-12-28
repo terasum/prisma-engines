@@ -4,10 +4,10 @@ name = "sql-schema-describer"
 version = "0.1.0"
 
 [features]
-mysql = ["quaint/mysql", "barrel/mysql"]
-sqlite = ["quaint/sqlite", "barrel/sqlite3"]
-mssql = ["quaint/mssql", "barrel/mssql"]
-postgresql = ["quaint/postgresql", "barrel/pg"]
+mysql = ["quaint/mysql"]
+sqlite = ["quaint/sqlite"]
+mssql = ["quaint/mssql"]
+postgresql = ["quaint/postgresql"]
 
 [dependencies]
 psl.workspace = true

@@ -1,10 +1,9 @@
-use super::{interpreting_executor::InterpretingExecutor, QueryExecutor};
-use crate::CoreError;
+use crate::{CoreError, QueryExecutor};
+
+use super::interpreting_executor::InterpretingExecutor;
 use connection_string::JdbcString;
 use connector::Connector;
-use mongodb_client::MongoConnectionString;
 use psl::{builtin_connectors::*, Datasource, PreviewFeatures};
-use sql_connector::*;
 use std::collections::HashMap;
 use std::str::FromStr;
 use url::Url;
@@ -13,7 +12,7 @@ use url::Url;
 use mongodb_client::MongoConnectionString;
 #[cfg(feature = "mongodb")]
 use mongodb_connector::MongoDb;
-#[cfg(feature = "sql")]
+#[cfg(feature = "sql-connector")]
 use sql_connector::*;
 
 const DEFAULT_SQLITE_DB_NAME: &str = "main";

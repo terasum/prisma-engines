@@ -13,9 +13,7 @@ indoc = "1"
 quaint = { workspace = true, optional = true }
 
 [features]
-sql = ["quaint"]
 mysql = ["quaint/mysql"]
 sqlite = ["quaint/sqlite"]
 postgresql = ["quaint/postgresql"]
 mssql = ["quaint/mssql"]
-default = []

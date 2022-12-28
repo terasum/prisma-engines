@@ -5,9 +5,8 @@ use crate::{
 };
 use enumflags2::BitFlags;
 use sql_schema_describer::{
-    postgres::{self, PostgresSchemaExt},
     walkers::{ColumnWalker, TableWalker},
-    ColumnId, EnumId, ForeignKeyId, IndexId, SqlSchema, TableId, UdtId, ViewId,
+    ColumnId, EnumId, ForeignKeyId, IndexId, SqlSchema, TableId, UdtId, ViewId, *,
 };
 use std::{collections::BTreeSet, fmt::Write as _};
 
@@ -158,24 +157,28 @@ impl SqlMigration {
                         idx,
                     ));
                 }
+                #[cfg(feature = "postgresql")]
                 SqlMigrationStep::CreateExtension(create_extension) => {
-                    let ext: &PostgresSchemaExt = self.schemas().next.downcast_connector_data();
+                    let ext: &postgres::PostgresSchemaExt = self.schemas().next.downcast_connector_data();
                     let extension = ext.get_extension(create_extension.id);
 
                     drift_items.insert((DriftType::CreatedExtension, &extension.name, idx));
                 }
+                #[cfg(feature = "postgresql")]
                 SqlMigrationStep::AlterExtension(alter_extension) => {
-                    let ext: &PostgresSchemaExt = self.schemas().previous.downcast_connector_data();
+                    let ext: &postgres::PostgresSchemaExt = self.schemas().previous.downcast_connector_data();
                     let extension = ext.get_extension(alter_extension.ids.previous);
 
                     drift_items.insert((DriftType::AlteredExtension, &extension.name, idx));
                 }
+                #[cfg(feature = "postgresql")]
                 SqlMigrationStep::DropExtension(drop_extension) => {
-                    let ext: &PostgresSchemaExt = self.schemas().previous.downcast_connector_data();
+                    let ext: &postgres::PostgresSchemaExt = self.schemas().previous.downcast_connector_data();
                     let extension = ext.get_extension(drop_extension.id);
 
                     drift_items.insert((DriftType::DroppedExtension, &extension.name, idx));
                 }
+                _ => (),
             };
         }
 
@@ -397,14 +400,18 @@ impl SqlMigration {
                     out.push_str(index.previous.name());
                     out.push_str("`\n");
                 }
+                #[cfg(feature = "postgresql")]
                 SqlMigrationStep::CreateExtension(create_extension) => {
-                    let ext: &PostgresSchemaExt = self.schemas().next.downcast_connector_data();
+                    let ext: &postgres::PostgresSchemaExt = self.schemas().next.downcast_connector_data();
                     out.push_str("  - ");
                     out.push_str(&ext.get_extension(create_extension.id).name);
                     out.push('\n');
                 }
+                #[cfg(feature = "postgresql")]
                 SqlMigrationStep::AlterExtension(_) => {}
+                #[cfg(feature = "postgresql")]
                 SqlMigrationStep::DropExtension(_) => {}
+                _ => {}
             }
         }
 
@@ -449,8 +456,11 @@ fn render_column_changes(columns: Pair<ColumnWalker<'_>>, changes: &ColumnChange
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum SqlMigrationStep {
     CreateSchema(sql_schema_describer::NamespaceId),
+    #[cfg(feature = "postgresql")]
     DropExtension(DropExtension),
+    #[cfg(feature = "postgresql")]
     CreateExtension(CreateExtension),
+    #[cfg(feature = "postgresql")]
     AlterExtension(AlterExtension),
     AlterSequence(Pair<u32>, SequenceChanges),
     DropView(DropView),
@@ -527,24 +537,30 @@ impl SqlMigrationStep {
             SqlMigrationStep::RedefineTables { .. } => "RedefineTables",
             SqlMigrationStep::RenameForeignKey { .. } => "RenameForeignKey",
             SqlMigrationStep::RenameIndex { .. } => "RenameIndex",
+            #[cfg(feature = "postgresql")]
             SqlMigrationStep::CreateExtension(_) => "CreateExtension",
+            #[cfg(feature = "postgresql")]
             SqlMigrationStep::AlterExtension(_) => "AlterExtension",
+            #[cfg(feature = "postgresql")]
             SqlMigrationStep::DropExtension(_) => "DropExtension",
         }
     }
 }
 
+#[cfg(feature = "postgresql")]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlterExtension {
     pub ids: Pair<postgres::ExtensionId>,
     pub changes: Vec<ExtensionChange>,
 }
 
+#[cfg(feature = "postgresql")]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct CreateExtension {
     pub id: postgres::ExtensionId,
 }
 
+#[cfg(feature = "postgresql")]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct DropExtension {
     pub id: postgres::ExtensionId,

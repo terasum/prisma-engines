@@ -1,5 +1,4 @@
 use psl::{datamodel_connector::constraint_names::ConstraintNames, parser_database::walkers};
-use sql::mssql::MssqlSchemaExt;
 use sql_schema_describer as sql;
 
 use super::{IndexFieldPair, Pair};
@@ -26,14 +25,19 @@ impl<'a> IdPair<'a> {
             return None;
         }
 
-        let ext: &MssqlSchemaExt = self.context.schema.downcast_connector_data();
-        let clustered = ext.index_is_clustered(self.next.id);
+        #[cfg(feature = "mssql")]
+        {
+            let ext: &sql::mssql::MssqlSchemaExt = self.context.schema.downcast_connector_data();
+            let clustered = ext.index_is_clustered(self.next.id);
 
-        if clustered {
-            return None;
+            if clustered {
+                return None;
+            }
+
+            Some(clustered)
         }
-
-        Some(clustered)
+        #[cfg(not(feature = "mssql"))]
+        None
     }
 
     /// True if the `@id` attribute is in a field, not in the model as

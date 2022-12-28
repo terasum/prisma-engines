@@ -17,7 +17,7 @@ mod sql_schema_differ;
 
 use database_schema::SqlDatabaseSchema;
 use enumflags2::BitFlags;
-use flavour::{MssqlFlavour, MysqlFlavour, PostgresFlavour, SqlFlavour, SqliteFlavour};
+use flavour::*;
 use migration_connector::{migrations_directory::MigrationDirectory, *};
 use pair::Pair;
 use psl::ValidatedSchema;

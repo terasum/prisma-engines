@@ -1,5 +1,4 @@
 use crate::{common, query_engine, KnownError};
-use common::ModelKind;
 use indoc::formatdoc;
 use quaint::{error::ErrorKind, prelude::ConnectionInfo};
 
@@ -239,7 +238,7 @@ pub fn render_quaint_error(kind: &ErrorKind, connection_info: &ConnectionInfo) -
         (ErrorKind::TableDoesNotExist { table: model }, ConnectionInfo::Mysql(_)) => {
             Some(KnownError::new(common::InvalidModel {
                 model: format!("{}", model),
-                kind: ModelKind::Table,
+                kind: common::ModelKind::Table,
             }))
         }
 
@@ -247,7 +246,7 @@ pub fn render_quaint_error(kind: &ErrorKind, connection_info: &ConnectionInfo) -
         (ErrorKind::TableDoesNotExist { table: model }, ConnectionInfo::Postgres(_)) => {
             Some(KnownError::new(common::InvalidModel {
                 model: format!("{}", model),
-                kind: ModelKind::Table,
+                kind: common::ModelKind::Table,
             }))
         }
 
@@ -255,7 +254,7 @@ pub fn render_quaint_error(kind: &ErrorKind, connection_info: &ConnectionInfo) -
         (ErrorKind::TableDoesNotExist { table: model }, ConnectionInfo::Sqlite { .. }) => {
             Some(KnownError::new(common::InvalidModel {
                 model: format!("{}", model),
-                kind: ModelKind::Table,
+                kind: common::ModelKind::Table,
             }))
         }
 
@@ -263,7 +262,7 @@ pub fn render_quaint_error(kind: &ErrorKind, connection_info: &ConnectionInfo) -
         (ErrorKind::TableDoesNotExist { table: model }, ConnectionInfo::Mssql(_)) => {
             Some(KnownError::new(common::InvalidModel {
                 model: format!("{}", model),
-                kind: ModelKind::Table,
+                kind: common::ModelKind::Table,
             }))
         }
 

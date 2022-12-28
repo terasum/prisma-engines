@@ -6,10 +6,7 @@ use connector_interface::*;
 use itertools::Itertools;
 use prisma_models::*;
 use psl::dml::prisma_value::PrismaValue;
-use quaint::{
-    error::ErrorKind,
-    prelude::{native_uuid, uuid_to_bin, uuid_to_bin_swapped, Aliasable, Select, SqlFamily},
-};
+use quaint::{error::ErrorKind, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,

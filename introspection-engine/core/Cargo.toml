@@ -11,7 +11,7 @@ vendored-openssl = ["sql-introspection-connector/vendored-openssl"]
 psl.workspace = true
 user-facing-errors = { path = "../../libs/user-facing-errors" }
 introspection-connector = { path = "../connectors/introspection-connector" }
-sql-introspection-connector = { path = "../connectors/sql-introspection-connector" }
+sql-introspection-connector = { path = "../connectors/sql-introspection-connector", features = ["postgresql", "sqlite", "mysql", "mssql"] }
 mongodb-introspection-connector = { path = "../connectors/mongodb-introspection-connector" }
 
 serde.workspace = true

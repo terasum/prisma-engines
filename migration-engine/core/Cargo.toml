@@ -10,6 +10,7 @@ mysql = ["sql", "sql-migration-connector/mysql"]
 sqlite = ["sql", "sql-migration-connector/sqlite"]
 postgresql = ["sql", "sql-migration-connector/postgresql"]
 mssql = ["sql", "sql-migration-connector/mssql"]
+vendored-openssl = ["sql-migration-connector/vendored-openssl"]
 
 [dependencies]
 psl.workspace = true
@@ -32,6 +33,3 @@ url = "2.1.1"
 
 [build-dependencies]
 json-rpc-api-build = { path = "../json-rpc-api-build" }
-
-[features]
-vendored-openssl = ["sql-migration-connector/vendored-openssl"]

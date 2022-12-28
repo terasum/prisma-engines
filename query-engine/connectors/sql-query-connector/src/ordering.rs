@@ -38,6 +38,7 @@ impl OrderByBuilder {
                 OrderBy::ToManyAggregation(order_by) => self.build_order_aggr_rel(order_by, needs_reversed_order),
                 #[cfg(any(feature = "postgresql", feature = "mysql"))]
                 OrderBy::Relevance(order_by) => self.build_order_relevance(order_by, needs_reversed_order),
+                _ => unreachable!(),
             })
             .collect_vec()
     }

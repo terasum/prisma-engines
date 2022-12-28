@@ -2,7 +2,6 @@ use crate::SqlFamilyTrait;
 use psl::{
     datamodel_connector::constraint_names::ConstraintNames, parser_database::walkers, schema_ast::ast, PreviewFeature,
 };
-use sql::{mssql::MssqlSchemaExt, postgres::PostgresSchemaExt};
 use sql_schema_describer as sql;
 
 use super::{IndexFieldPair, Pair};
@@ -46,14 +45,19 @@ impl<'a> IndexPair<'a> {
             return None;
         }
 
-        let ext: &MssqlSchemaExt = self.context.schema.downcast_connector_data();
-        let clustered = ext.index_is_clustered(self.next.id);
+        #[cfg(feature = "mssql")]
+        {
+            let ext: &sql::mssql::MssqlSchemaExt = self.context.schema.downcast_connector_data();
+            let clustered = ext.index_is_clustered(self.next.id);
 
-        if !clustered {
-            return None;
+            if !clustered {
+                return None;
+            }
+
+            Some(clustered)
         }
-
-        Some(clustered)
+        #[cfg(not(feature = "mssql"))]
+        None
     }
 
     /// A PostgreSQL specific algorithm. Defines the data structure
@@ -63,16 +67,21 @@ impl<'a> IndexPair<'a> {
             return None;
         }
 
-        let data: &PostgresSchemaExt = self.context.schema.downcast_connector_data();
+        #[cfg(feature = "postgresql")]
+        {
+            let data: &sql::postgres::PostgresSchemaExt = self.context.schema.downcast_connector_data();
 
-        match data.index_algorithm(self.next.id) {
-            sql::postgres::SqlIndexAlgorithm::BTree => None,
-            sql::postgres::SqlIndexAlgorithm::Hash => Some("Hash"),
-            sql::postgres::SqlIndexAlgorithm::Gist => Some("Gist"),
-            sql::postgres::SqlIndexAlgorithm::Gin => Some("Gin"),
-            sql::postgres::SqlIndexAlgorithm::SpGist => Some("SpGist"),
-            sql::postgres::SqlIndexAlgorithm::Brin => Some("Brin"),
+            match data.index_algorithm(self.next.id) {
+                sql::postgres::SqlIndexAlgorithm::BTree => None,
+                sql::postgres::SqlIndexAlgorithm::Hash => Some("Hash"),
+                sql::postgres::SqlIndexAlgorithm::Gist => Some("Gist"),
+                sql::postgres::SqlIndexAlgorithm::Gin => Some("Gin"),
+                sql::postgres::SqlIndexAlgorithm::SpGist => Some("SpGist"),
+                sql::postgres::SqlIndexAlgorithm::Brin => Some("Brin"),
+            }
         }
+        #[cfg(not(feature = "postgresql"))]
+        None
     }
 
     /// The fields that are defining the index.

@@ -55,4 +55,4 @@ version = "1.2"
 
 [dependencies.user-facing-errors]
 path = "../../../libs/user-facing-errors"
-features = ["sql"]
+features = ["quaint"]
