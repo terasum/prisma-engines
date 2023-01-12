@@ -1,5 +1,5 @@
 use super::{catch, transaction::SqlConnectorTransaction};
-use crate::{database::operations::*, operations::upsert::native_upsert, sql_info::SqlInfo, QueryExt, SqlError};
+use crate::{database::operations::*, operations::upsert::*, sql_info::SqlInfo, QueryExt, SqlError};
 use async_trait::async_trait;
 use connector::{ConnectionLike, RelAggregationSelection};
 use connector_interface::{
@@ -245,7 +245,11 @@ where
         trace_id: Option<String>,
     ) -> connector::Result<SingleRecord> {
         catch(self.connection_info.clone(), async move {
-            native_upsert(&self.inner, upsert, trace_id).await
+            #[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
+            return native_upsert(&self.inner, upsert, trace_id).await;
+
+            #[cfg(not(any(feature = "postgresql", feature = "mssql", feature = "sqlite")))]
+            unreachable!()
         })
         .await
     }

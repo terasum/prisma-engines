@@ -11,6 +11,7 @@ use crate::{
     row::ToSqlRow,
 };
 
+#[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
 pub async fn native_upsert(
     conn: &dyn QueryExt,
     upsert: NativeUpsert,
