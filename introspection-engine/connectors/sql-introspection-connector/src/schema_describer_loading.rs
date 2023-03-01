@@ -2,7 +2,7 @@
 
 use psl::builtin_connectors::POSTGRES;
 use quaint::prelude::{ConnectionInfo, Queryable, SqlFamily};
-use sql_schema_describer::{postgres::Circumstances, SqlSchemaDescriberBackend};
+use sql_schema_describer::SqlSchemaDescriberBackend;
 
 /// Create a correct describer instance for the given database.
 pub async fn load_describer<'a>(
@@ -13,7 +13,10 @@ pub async fn load_describer<'a>(
     let version = connection.version().await?;
 
     Ok(match connection_info.sql_family() {
+        #[cfg(feature = "postgresql")]
         SqlFamily::Postgres => {
+            use sql_schema_describer::postgres::Circumstances;
+
             let mut circumstances = Default::default();
 
             if version.map(|version| version.contains("CockroachDB")).unwrap_or(false) {
@@ -42,8 +45,11 @@ pub async fn load_describer<'a>(
                 circumstances,
             )) as Box<dyn SqlSchemaDescriberBackend>
         }
+        #[cfg(feature = "mysql")]
         SqlFamily::Mysql => Box::new(sql_schema_describer::mysql::SqlSchemaDescriber::new(connection)),
+        #[cfg(feature = "sqlite")]
         SqlFamily::Sqlite => Box::new(sql_schema_describer::sqlite::SqlSchemaDescriber::new(connection)),
+        #[cfg(feature = "mssql")]
         SqlFamily::Mssql => Box::new(sql_schema_describer::mssql::SqlSchemaDescriber::new(connection)),
     })
 }

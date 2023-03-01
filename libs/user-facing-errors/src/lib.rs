@@ -6,7 +6,7 @@ mod panic_hook;
 pub mod common;
 pub mod introspection_engine;
 pub mod migration_engine;
-#[cfg(feature = "sql")]
+#[cfg(feature = "quaint")]
 pub mod quaint;
 pub mod query_engine;
 

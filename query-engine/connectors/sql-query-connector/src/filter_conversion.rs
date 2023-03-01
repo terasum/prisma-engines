@@ -194,6 +194,7 @@ impl AliasedCondition for ScalarFilter {
     /// Conversion from a `ScalarFilter` to a query condition tree. Aliased when in a nested `SELECT`.
     fn aliased_cond(self, state: ConditionState, ctx: &Context<'_>) -> ConditionTree<'static> {
         match self.condition {
+            #[cfg(feature = "postgresql")]
             ScalarCondition::Search(_, _) | ScalarCondition::NotSearch(_, _) => {
                 let mut projections = match self.condition.clone() {
                     ScalarCondition::Search(_, proj) => proj,
@@ -283,6 +284,7 @@ fn convert_scalar_list_filter(
         ScalarListCondition::Contains(ConditionValue::Value(val)) => {
             comparable.compare_raw("@>", convert_list_pv(field, vec![val]))
         }
+        #[cfg(feature = "postgresql")]
         ScalarListCondition::Contains(ConditionValue::FieldRef(field_ref)) => {
             let field_ref_expr: Expression = field_ref.aliased_col(alias, ctx).into();
 
@@ -303,6 +305,8 @@ fn convert_scalar_list_filter(
         }
         ScalarListCondition::IsEmpty(true) => comparable.compare_raw("=", Value::Array(Some(vec![])).raw()),
         ScalarListCondition::IsEmpty(false) => comparable.compare_raw("<>", Value::Array(Some(vec![])).raw()),
+        // feature gate stuff
+        _ => unreachable!(),
     };
 
     ConditionTree::single(condition)
@@ -491,6 +495,7 @@ fn convert_scalar_filter(
     ctx: &Context<'_>,
 ) -> ConditionTree<'static> {
     match cond {
+        #[cfg(any(feature = "postgresql", feature = "mysql"))]
         ScalarCondition::JsonCompare(json_compare) => convert_json_filter(
             comparable,
             json_compare,
@@ -509,6 +514,7 @@ fn convert_scalar_filter(
     }
 }
 
+#[cfg(any(feature = "postgresql", feature = "mysql"))]
 fn convert_json_filter(
     comparable: Expression<'static>,
     json_condition: JsonCondition,
@@ -524,10 +530,12 @@ fn convert_json_filter(
         target_type,
     } = json_condition;
     let (expr_json, expr_string): (Expression, Expression) = match path {
+        #[cfg(feature = "mysql")]
         Some(JsonFilterPath::String(path)) => (
             json_extract(comparable.clone(), JsonPath::string(path.clone()), false).into(),
             json_extract(comparable, JsonPath::string(path), true).into(),
         ),
+        #[cfg(feature = "postgresql")]
         Some(JsonFilterPath::Array(path)) => (
             json_extract(comparable.clone(), JsonPath::array(path.clone()), false).into(),
             json_extract(comparable, JsonPath::array(path), true).into(),
@@ -595,6 +603,7 @@ fn convert_json_filter(
     ConditionTree::single(condition)
 }
 
+#[cfg(any(feature = "postgresql", feature = "mysql"))]
 fn with_json_type_filter(
     comparable: Compare<'static>,
     expr_json: Expression<'static>,
@@ -714,6 +723,7 @@ fn default_scalar_filter(
             }
             _ => comparable.in_selection(convert_pvs(fields, values)),
         },
+        #[cfg(feature = "postgresql")]
         ScalarCondition::In(ConditionListValue::FieldRef(field_ref)) => {
             // This code path is only reachable for connectors with `ScalarLists` capability
             comparable.equals(Expression::from(field_ref.aliased_col(alias, ctx)).any())
@@ -731,10 +741,12 @@ fn default_scalar_filter(
             }
             _ => comparable.not_in_selection(convert_pvs(fields, values)),
         },
+        #[cfg(feature = "postgresql")]
         ScalarCondition::NotIn(ConditionListValue::FieldRef(field_ref)) => {
             // This code path is only reachable for connectors with `ScalarLists` capability
             comparable.not_equals(Expression::from(field_ref.aliased_col(alias, ctx)).all())
         }
+        #[cfg(feature = "postgresql")]
         ScalarCondition::Search(value, _) => {
             let query: String = value
                 .into_value()
@@ -744,6 +756,7 @@ fn default_scalar_filter(
 
             comparable.matches(query)
         }
+        #[cfg(feature = "postgresql")]
         ScalarCondition::NotSearch(value, _) => {
             let query: String = value
                 .into_value()
@@ -753,8 +766,8 @@ fn default_scalar_filter(
 
             comparable.not_matches(query)
         }
-        ScalarCondition::JsonCompare(_) => unreachable!(),
-        ScalarCondition::IsSet(_) => unreachable!(),
+        // feature-gated stuff
+        _ => unreachable!(),
     };
 
     ConditionTree::single(condition)
@@ -880,6 +893,7 @@ fn insensitive_scalar_filter(
                 )
             }
         },
+        #[cfg(feature = "postgresql")]
         ScalarCondition::In(ConditionListValue::FieldRef(field_ref)) => {
             // This code path is only reachable for connectors with `ScalarLists` capability
             comparable.compare_raw("ILIKE", Expression::from(field_ref.aliased_col(alias, ctx)).any())
@@ -911,10 +925,12 @@ fn insensitive_scalar_filter(
                 )
             }
         },
+        #[cfg(feature = "postgresql")]
         ScalarCondition::NotIn(ConditionListValue::FieldRef(field_ref)) => {
             // This code path is only reachable for connectors with `ScalarLists` capability
             comparable.compare_raw("NOT ILIKE", Expression::from(field_ref.aliased_col(alias, ctx)).all())
         }
+        #[cfg(feature = "postgresql")]
         ScalarCondition::Search(value, _) => {
             let query: String = value
                 .into_value()
@@ -924,6 +940,7 @@ fn insensitive_scalar_filter(
 
             comparable.matches(query)
         }
+        #[cfg(feature = "postgresql")]
         ScalarCondition::NotSearch(value, _) => {
             let query: String = value
                 .into_value()
@@ -933,8 +950,8 @@ fn insensitive_scalar_filter(
 
             comparable.not_matches(query)
         }
-        ScalarCondition::JsonCompare(_) => unreachable!(),
-        ScalarCondition::IsSet(_) => unreachable!(),
+        // feature gate stuff
+        _ => unreachable!(),
     };
 
     ConditionTree::single(condition)
@@ -1025,6 +1042,7 @@ trait JsonFilterExt {
     ) -> Expression<'static>;
 }
 
+#[cfg(any(feature = "postgresql", feature = "mysql"))]
 impl JsonFilterExt for (Expression<'static>, Expression<'static>) {
     fn json_contains(
         self,

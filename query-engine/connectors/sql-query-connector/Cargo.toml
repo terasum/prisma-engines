@@ -5,6 +5,10 @@ version = "0.1.0"
 
 [features]
 vendored-openssl = ["quaint/vendored-openssl"]
+mysql = ["quaint/mysql", "user-facing-errors/mysql"]
+sqlite = ["quaint/sqlite", "user-facing-errors/sqlite"]
+mssql = ["quaint/mssql", "user-facing-errors/mssql"]
+postgresql = ["quaint/postgresql", "user-facing-errors/postgresql"]
 
 [dependencies]
 psl.workspace = true
@@ -15,7 +19,7 @@ futures = "0.3"
 itertools = "0.10"
 once_cell = "1.3"
 rand = "0.7"
-serde_json = {version = "1.0", features = ["float_roundtrip"]}
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 thiserror = "1.0"
 tokio.workspace = true
 tracing = "0.1"
@@ -23,7 +27,7 @@ tracing-futures = "0.2"
 uuid.workspace = true
 opentelemetry = { version = "0.17", features = ["tokio"] }
 tracing-opentelemetry = "0.17.3"
-quaint.workspace = true
+quaint = { workspace = true, features = ["pooled", "json", "uuid", "chrono", "bigdecimal", "fmt-sql"] }
 
 [dependencies.connector-interface]
 package = "query-connector"
@@ -47,5 +51,5 @@ version = "1.0"
 version = "1.2"
 
 [dependencies.user-facing-errors]
-features = ["sql"]
 path = "../../../libs/user-facing-errors"
+features = ["quaint"]

@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-postgres = []
+postgresql = []
 mysql = []
 sqlite = []
 mssql = []
-default = ["postgres", "mysql", "sqlite", "mssql"]
+# default = ["postgres", "mysql", "sqlite", "mssql"]
 
 [dependencies]
 

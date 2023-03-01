@@ -10,10 +10,10 @@ include!(concat!(env!("OUT_DIR"), "/methods.rs"));
 #[doc(hidden)]
 pub mod commands;
 
-mod api;
+pub mod api;
 mod core_error;
 mod rpc;
-mod state;
+pub mod state;
 mod timings;
 
 pub use self::{api::GenericApi, core_error::*, rpc::rpc_api, timings::TimingsLayer};
@@ -21,11 +21,14 @@ pub use migration_connector;
 
 use enumflags2::BitFlags;
 use migration_connector::ConnectorParams;
-use mongodb_migration_connector::MongoDbMigrationConnector;
 use psl::{builtin_connectors::*, parser_database::SourceFile, Datasource, PreviewFeature, ValidatedSchema};
-use sql_migration_connector::SqlMigrationConnector;
 use std::{env, path::Path};
 use user_facing_errors::common::InvalidConnectionString;
+
+#[cfg(feature = "mongodb")]
+use mongodb_migration_connector::MongoDbMigrationConnector;
+#[cfg(feature = "sql")]
+use sql_migration_connector::SqlMigrationConnector;
 
 fn parse_schema(schema: SourceFile) -> CoreResult<ValidatedSchema> {
     psl::parse_schema(schema).map_err(CoreError::new_schema_parser_error)
@@ -37,6 +40,7 @@ fn connector_for_connection_string(
     preview_features: BitFlags<PreviewFeature>,
 ) -> CoreResult<Box<dyn migration_connector::MigrationConnector>> {
     match connection_string.split(':').next() {
+        #[cfg(feature = "postgresql")]
         Some("postgres") | Some("postgresql") => {
             let params = ConnectorParams {
                 connection_string,
@@ -47,6 +51,7 @@ fn connector_for_connection_string(
             connector.set_params(params)?;
             Ok(Box::new(connector))
         }
+        #[cfg(feature = "sqlite")]
         Some("file") => {
             let params = ConnectorParams {
                 connection_string,
@@ -57,6 +62,7 @@ fn connector_for_connection_string(
             connector.set_params(params)?;
             Ok(Box::new(connector))
         }
+        #[cfg(feature = "mysql")]
         Some("mysql") => {
             let params = ConnectorParams {
                 connection_string,
@@ -67,6 +73,7 @@ fn connector_for_connection_string(
             connector.set_params(params)?;
             Ok(Box::new(connector))
         }
+        #[cfg(feature = "mssql")]
         Some("sqlserver") => {
             let params = ConnectorParams {
                 connection_string,
@@ -77,6 +84,7 @@ fn connector_for_connection_string(
             connector.set_params(params)?;
             Ok(Box::new(connector))
         }
+        #[cfg(feature = "mongodb")]
         Some("mongodb+srv") | Some("mongodb") => {
             let params = ConnectorParams {
                 connection_string,
@@ -144,12 +152,18 @@ fn schema_to_connector(
 
 fn connector_for_provider(provider: &str) -> CoreResult<Box<dyn migration_connector::MigrationConnector>> {
     match provider {
+        #[cfg(feature = "postgresql")]
         p if POSTGRES.is_provider(p) => Ok(Box::new(SqlMigrationConnector::new_postgres())),
+        #[cfg(feature = "postgresql")]
         p if COCKROACH.is_provider(p) => Ok(Box::new(SqlMigrationConnector::new_cockroach())),
+        #[cfg(feature = "mysql")]
         p if MYSQL.is_provider(p) => Ok(Box::new(SqlMigrationConnector::new_mysql())),
+        #[cfg(feature = "sqlite")]
         p if SQLITE.is_provider(p) => Ok(Box::new(SqlMigrationConnector::new_sqlite())),
+        #[cfg(feature = "mssql")]
         p if MSSQL.is_provider(p) => Ok(Box::new(SqlMigrationConnector::new_mssql())),
         // TODO: adopt a state machine pattern in the mongo connector too
+        #[cfg(feature = "mongodb")]
         p if MONGODB.is_provider(p) => Ok(Box::new(MongoDbMigrationConnector::new(ConnectorParams {
             connection_string: String::new(),
             preview_features: Default::default(),

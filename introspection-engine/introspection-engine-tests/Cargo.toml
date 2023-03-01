@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 sql-introspection-connector = { path = "../connectors/sql-introspection-connector" }
 migration-connector = { path = "../../migration-engine/connectors/migration-connector" }
-sql-migration-connector = { path = "../../migration-engine/connectors/sql-migration-connector" }
+sql-migration-connector = { path = "../../migration-engine/connectors/sql-migration-connector", features = ["postgresql", "mysql", "mssql", "sqlite"] }
 introspection-connector = { path = "../connectors/introspection-connector" }
 introspection-core = { path = "../core" }
 sql-schema-describer = { path = "../../libs/sql-schema-describer" }
@@ -24,7 +24,7 @@ tracing = "0.1"
 indoc = "1"
 expect-test = "1.1.0"
 url = "2"
-quaint.workspace = true
+quaint = { workspace = true }
 
 [dependencies.barrel]
 git = "https://github.com/prisma/barrel.git"

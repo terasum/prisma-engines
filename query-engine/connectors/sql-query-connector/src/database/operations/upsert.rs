@@ -11,6 +11,7 @@ use connector_interface::NativeUpsert;
 use prisma_models::{ModelProjection, Record, SingleRecord};
 use quaint::prelude::{OnConflict, Query};
 
+#[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
 pub(crate) async fn native_upsert(
     conn: &dyn QueryExt,
     upsert: NativeUpsert,

@@ -1,13 +1,18 @@
-use super::{interpreting_executor::InterpretingExecutor, QueryExecutor};
-use crate::CoreError;
+use crate::{CoreError, QueryExecutor};
+
+use super::interpreting_executor::InterpretingExecutor;
+use connection_string::JdbcString;
 use connector::Connector;
 use psl::{builtin_connectors::*, Datasource, PreviewFeatures};
-use sql_connector::*;
 use std::collections::HashMap;
 use url::Url;
 
 #[cfg(feature = "mongodb")]
+use mongodb_client::MongoConnectionString;
+#[cfg(feature = "mongodb")]
 use mongodb_connector::MongoDb;
+#[cfg(feature = "sql-connector")]
+use sql_connector::*;
 
 /// Loads a query executor based on the parsed Prisma schema (datasource).
 pub async fn load(
@@ -16,11 +21,14 @@ pub async fn load(
     url: &str,
 ) -> crate::Result<Box<dyn QueryExecutor + Send + Sync>> {
     match source.active_provider {
+        #[cfg(feature = "sqlite")]
         p if SQLITE.is_provider(p) => sqlite(source, url, features).await,
+        #[cfg(feature = "mysql")]
         p if MYSQL.is_provider(p) => mysql(source, url, features).await,
-        p if POSTGRES.is_provider(p) => postgres(source, url, features).await,
+        #[cfg(feature = "postgresql")]
+        p if POSTGRES.is_provider(p) | COCKROACH.is_provider(p) => postgres(source, url, features).await,
+        #[cfg(feature = "mssql")]
         p if MSSQL.is_provider(p) => mssql(source, url, features).await,
-        p if COCKROACH.is_provider(p) => postgres(source, url, features).await,
 
         #[cfg(feature = "mongodb")]
         p if MONGODB.is_provider(p) => mongodb(source, url, features).await,
@@ -31,6 +39,7 @@ pub async fn load(
     }
 }
 
+#[cfg(feature = "sqlite")]
 async fn sqlite(
     source: &Datasource,
     url: &str,
@@ -42,6 +51,7 @@ async fn sqlite(
     Ok(sql_executor(sqlite, false))
 }
 
+#[cfg(feature = "postgresql")]
 async fn postgres(
     source: &Datasource,
     url: &str,
@@ -64,6 +74,7 @@ async fn postgres(
     Ok(sql_executor(psql, force_transactions))
 }
 
+#[cfg(feature = "mysql")]
 async fn mysql(
     source: &Datasource,
     url: &str,
@@ -75,6 +86,7 @@ async fn mysql(
     Ok(sql_executor(mysql, false))
 }
 
+#[cfg(feature = "mssql")]
 async fn mssql(
     source: &Datasource,
     url: &str,

@@ -230,6 +230,7 @@ where
         .await
     }
 
+    #[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
     async fn native_upsert_record(
         &mut self,
         upsert: connector_interface::NativeUpsert,

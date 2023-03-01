@@ -9,20 +9,19 @@
 //!   statements, this is done later.
 
 mod common;
+#[cfg(feature = "mssql")]
 mod mssql_renderer;
+#[cfg(feature = "mysql")]
 mod mysql_renderer;
+#[cfg(feature = "postgresql")]
 mod postgres_renderer;
+#[cfg(feature = "sqlite")]
 mod sqlite_renderer;
 
 pub(crate) use common::IteratorJoin;
 
 use self::common::{Quoted, QuotedWithPrefix};
-use crate::{
-    pair::Pair,
-    sql_migration::{
-        AlterEnum, AlterExtension, AlterTable, CreateExtension, DropExtension, RedefineTable, SequenceChanges,
-    },
-};
+use crate::{pair::Pair, sql_migration::*};
 use sql_schema_describer::{
     self as sql,
     walkers::{EnumWalker, ForeignKeyWalker, IndexWalker, TableWalker, UserDefinedTypeWalker, ViewWalker},
@@ -116,14 +115,17 @@ pub(crate) trait SqlRenderer {
         unreachable!()
     }
 
+    #[cfg(feature = "postgresql")]
     fn render_create_extension(&self, _create: &CreateExtension, _schema: &SqlSchema) -> Vec<String> {
         unreachable!("render_create_extension")
     }
 
+    #[cfg(feature = "postgresql")]
     fn render_alter_extension(&self, _alter: &AlterExtension, _schemas: Pair<&SqlSchema>) -> Vec<String> {
         unreachable!("render_alter_extension")
     }
 
+    #[cfg(feature = "postgresql")]
     fn render_drop_extension(&self, _drop: &DropExtension, _schema: &SqlSchema) -> Vec<String> {
         unreachable!("render_drop_extension")
     }

@@ -86,11 +86,13 @@ impl DefaultValue {
 
     /// Returns either a copy of the contained single value or produces a new
     /// value as defined by the expression.
-    #[cfg(feature = "default_generators")]
     pub fn get(&self) -> Option<PrismaValue> {
         match self.kind {
             DefaultKind::Single(ref v) => Some(v.clone()),
+            #[cfg(feature = "default_generators")]
             DefaultKind::Expression(ref g) => g.generate(),
+            #[cfg(not(feature = "default_generators"))]
+            DefaultKind::Expression(_) => unreachable!(),
         }
     }
 

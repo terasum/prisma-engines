@@ -30,4 +30,4 @@ tokio.workspace = true
 tracing = "0.1"
 tracing-futures = "0.2"
 url = "2.1.1"
-quaint.workspace = true
+quaint = { workspace = true, features = ["vendored-openssl"] }

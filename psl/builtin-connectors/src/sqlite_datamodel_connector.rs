@@ -20,6 +20,10 @@ const CAPABILITIES: &[ConnectorCapability] = &[
     ConnectorCapability::BackwardCompatibleQueryRaw,
     ConnectorCapability::OrderByNullsFirstLast,
     ConnectorCapability::SupportsTxIsolationSerializable,
+    #[cfg(feature = "sqlite-create-many")]
+    ConnectorCapability::CreateMany,
+    #[cfg(feature = "sqlite-create-many")]
+    ConnectorCapability::CreateSkipDuplicates,
     ConnectorCapability::NativeUpsert,
 ];
 

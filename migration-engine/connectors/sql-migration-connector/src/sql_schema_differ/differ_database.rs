@@ -1,7 +1,8 @@
 use super::{column, enums::EnumDiffer, table::TableDiffer};
 use crate::{flavour::SqlFlavour, pair::Pair, SqlDatabaseSchema};
+#[cfg(feature = "postgresql")]
+use sql_schema_describer::postgres::{ExtensionId, ExtensionWalker, PostgresSchemaExt};
 use sql_schema_describer::{
-    postgres::{ExtensionId, ExtensionWalker, PostgresSchemaExt},
     walkers::{EnumWalker, TableColumnWalker, TableWalker},
     NamespaceId, NamespaceWalker, TableColumnId, TableId,
 };
@@ -27,6 +28,7 @@ pub(crate) struct DifferDatabase<'a> {
     /// (table_idx, column_idx) -> ColumnChanges
     column_changes: HashMap<Pair<TableColumnId>, column::ColumnChanges>,
     /// Postgres extension name -> extension indexes.
+    #[cfg(feature = "postgresql")]
     pub(super) extensions: HashMap<&'a str, Pair<Option<ExtensionId>>>,
     /// Tables that will need to be completely redefined (dropped and recreated) for the migration
     /// to succeed. It needs to be crate public because it is set from the flavour.
@@ -51,6 +53,7 @@ impl<'a> DifferDatabase<'a> {
             tables: HashMap::with_capacity(table_count_lb),
             columns: BTreeMap::new(),
             column_changes: Default::default(),
+            #[cfg(feature = "postgresql")]
             extensions: Default::default(),
             tables_to_redefine: Default::default(),
         };
@@ -262,6 +265,7 @@ impl<'a> DifferDatabase<'a> {
             .filter(move |previous| !self.next_enums().any(|next| enums_match(previous, &next)))
     }
 
+    #[cfg(feature = "postgresql")]
     /// Extensions not present in the previous schema.
     pub(crate) fn created_extensions(&self) -> impl Iterator<Item = ExtensionId> + '_ {
         self.extensions
@@ -270,6 +274,7 @@ impl<'a> DifferDatabase<'a> {
             .filter_map(|pair| pair.next)
     }
 
+    #[cfg(feature = "postgresql")]
     /// Non-relocatable extensions present in both schemas with changed values.
     pub(crate) fn non_relocatable_extension_pairs<'db>(
         &'db self,
@@ -285,6 +290,7 @@ impl<'a> DifferDatabase<'a> {
         })
     }
 
+    #[cfg(feature = "postgresql")]
     /// Relocatable extensions present in both schemas with changed values.
     pub(crate) fn relocatable_extension_pairs<'db>(&'db self) -> impl Iterator<Item = Pair<ExtensionWalker<'a>>> + 'db {
         self.previous_extensions().filter_map(move |previous| {
@@ -306,17 +312,20 @@ impl<'a> DifferDatabase<'a> {
         self.schemas.next.describer_schema.enum_walkers()
     }
 
+    #[cfg(feature = "postgresql")]
     fn previous_extensions(&self) -> impl Iterator<Item = ExtensionWalker<'a>> {
         let conn_data: &PostgresSchemaExt = self.schemas.previous.describer_schema.downcast_connector_data();
         conn_data.extension_walkers()
     }
 
+    #[cfg(feature = "postgresql")]
     fn next_extensions(&self) -> impl Iterator<Item = ExtensionWalker<'a>> {
         let conn_data: &PostgresSchemaExt = self.schemas.next.describer_schema.downcast_connector_data();
         conn_data.extension_walkers()
     }
 }
 
+#[cfg(feature = "postgresql")]
 pub(crate) fn extensions_match(previous: ExtensionWalker<'_>, next: ExtensionWalker<'_>) -> bool {
     let names_match = previous.name() == next.name();
 

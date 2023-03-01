@@ -15,7 +15,7 @@ use std::{
     ops::Deref,
     usize,
 };
-use tracing::log::trace;
+use tracing::trace;
 use user_facing_errors::query_engine::DatabaseConstraint;
 
 async fn generate_id(
@@ -40,8 +40,11 @@ async fn generate_id(
             let func = value.1.to_lowercase().replace(' ', "");
 
             match func.as_str() {
+                #[cfg(feature = "mysql")]
                 "(uuid())" => (query.value(native_uuid().alias(alias)), true),
+                #[cfg(feature = "mysql")]
                 "(uuid_to_bin(uuid()))" | "(uuid_to_bin(uuid(),0))" => (query.value(uuid_to_bin().alias(alias)), true),
+                #[cfg(feature = "mysql")]
                 "(uuid_to_bin(uuid(),1))" => (query.value(uuid_to_bin_swapped().alias(alias)), true),
                 _ => (query, generated),
             }
@@ -79,6 +82,7 @@ pub(crate) async fn create_record(
     let returned_id = returned_id.or_else(|| args.as_record_projection(pk.clone().into()));
 
     let args = match returned_id {
+        #[cfg(feature = "mysql")]
         Some(ref pk) if *sql_family == SqlFamily::Mysql => {
             for (field, value) in pk.pairs.iter() {
                 let field = DatasourceFieldName(field.db_name().into());

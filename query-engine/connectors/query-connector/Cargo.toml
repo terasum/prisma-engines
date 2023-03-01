@@ -6,7 +6,7 @@ version = "0.1.0"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1.31"
-chrono = {version = "0.4", features = ["serde"]}
+chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 itertools = "0.10"
 prisma-models = {path = "../../prisma-models"}
@@ -17,3 +17,7 @@ thiserror = "1.0"
 user-facing-errors = {path = "../../../libs/user-facing-errors"}
 uuid = "1"
 indexmap = "1.7"
+
+[features]
+mysql = ["sql", "user-facing-errors/mysql"]
+sql = []
