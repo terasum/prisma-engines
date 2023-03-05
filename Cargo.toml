@@ -40,7 +40,7 @@ uuid = { version = "1", features = ["serde"] }
 
 [workspace.dependencies.quaint]
 git = "https://github.com/Brendonovich/quaint"
-branch = "pcr-0.6.5"
+tag = "0.6.5"
 features = [
   "bigdecimal",
   "chrono",
