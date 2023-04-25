@@ -15,6 +15,7 @@ mod relation;
 mod relation_field;
 mod scalar_field;
 
+pub use crate::types::RelationFieldId;
 pub use composite_type::*;
 pub use field::*;
 pub use index::*;
@@ -103,14 +104,10 @@ impl crate::ParserDatabase {
         self.types
             .unknown_function_defaults
             .iter()
-            .map(|(model_id, field_id)| DefaultValueWalker {
-                model_id: *model_id,
-                field_id: *field_id,
+            .map(|id| DefaultValueWalker {
+                field_id: *id,
                 db: self,
-                default: self.types.scalar_fields[&(*model_id, *field_id)]
-                    .default
-                    .as_ref()
-                    .unwrap(),
+                default: self.types[*id].default.as_ref().unwrap(),
             })
     }
 
@@ -129,13 +126,13 @@ impl crate::ParserDatabase {
     pub fn walk_complete_inline_relations(&self) -> impl Iterator<Item = CompleteInlineRelationWalker<'_>> + '_ {
         self.relations
             .iter_relations()
-            .filter(|(_, _, relation)| !relation.is_implicit_many_to_many())
-            .filter_map(move |(model_a, model_b, relation)| {
+            .filter(|(relation, _)| !relation.is_implicit_many_to_many())
+            .filter_map(move |(relation, _)| {
                 relation
                     .as_complete_fields()
                     .map(|(field_a, field_b)| CompleteInlineRelationWalker {
-                        side_a: (model_a, field_a),
-                        side_b: (model_b, field_b),
+                        side_a: field_a,
+                        side_b: field_b,
                         db: self,
                     })
             })

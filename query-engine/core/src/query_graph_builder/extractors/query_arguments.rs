@@ -159,7 +159,7 @@ fn process_order_object(
                     let object: ParsedInputMap = field_value.try_into()?;
                     path.push((&cf).into());
 
-                    process_order_object(&cf.typ.clone().into(), object, path, None)
+                    process_order_object(&cf.typ().into(), object, path, None)
                 }
             }
         }
@@ -282,7 +282,7 @@ fn extract_cursor(value: ParsedInputValue, model: &ModelRef) -> QueryGraphBuilde
     for (field_name, map_value) in input_map {
         let additional_pairs = match model.fields().find_from_scalar(&field_name) {
             Ok(field) => extract_cursor_field(field, map_value)?,
-            Err(_) => match utils::resolve_compound_field(&field_name, &model) {
+            Err(_) => match utils::resolve_compound_field(&field_name, model) {
                 Some(fields) => extract_compound_cursor_field(fields, map_value)?,
                 None => {
                     return Err(QueryGraphBuilderError::AssertionError(format!(

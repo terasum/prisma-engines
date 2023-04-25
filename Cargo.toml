@@ -1,21 +1,23 @@
 [workspace]
 resolver = "2"
 members = [
-  "introspection-engine/connectors/*",
-  "introspection-engine/core",
-  "introspection-engine/datamodel-renderer",
-  "introspection-engine/introspection-engine-tests",
-  "migration-engine/cli",
-  "migration-engine/connectors/*",
-  "migration-engine/core",
-  "migration-engine/json-rpc-api-build",
-  "migration-engine/migration-engine-tests",
+  "schema-engine/cli",
+  "schema-engine/core",
+  "schema-engine/connectors/*",
+  "schema-engine/datamodel-renderer",
+  "schema-engine/json-rpc-api-build",
+  "schema-engine/sql-migration-tests",
+  "schema-engine/sql-introspection-tests",
+  "schema-engine/mongodb-schema-describer",
+  "schema-engine/sql-schema-describer",
   "query-engine/connectors/*",
   "query-engine/connector-test-kit-rs/qe-setup",
   "query-engine/connector-test-kit-rs/query-engine-tests",
   "query-engine/connector-test-kit-rs/query-test-macros",
   "query-engine/connector-test-kit-rs/query-tests-setup",
   "query-engine/core",
+  "query-engine/core-tests",
+  "query-engine/black-box-tests",
   "query-engine/dmmf",
   "query-engine/metrics",
   "query-engine/prisma-models",
@@ -37,10 +39,11 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.25", features = ["rt-multi-thread", "macros", "sync", "io-std", "io-util", "parking_lot", "time"] }
 user-facing-errors = { path = "./libs/user-facing-errors" }
 uuid = { version = "1", features = ["serde"] }
+indoc = "2.0.1"
 
 [workspace.dependencies.quaint]
-git = "https://github.com/Brendonovich/quaint"
-tag = "0.6.5"
+git = "https://github.com/prisma/quaint"
+rev = "5a708313ed488da9016e37edbb2f774fd7893250"
 features = [
   "bigdecimal",
   "chrono",
@@ -64,3 +67,7 @@ strip = "symbols"
 lto = "fat"
 codegen-units = 1
 opt-level = 's' # Optimize for size.
+
+[profile.profiling]
+inherits = "release"
+debug = true

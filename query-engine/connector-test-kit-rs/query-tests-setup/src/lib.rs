@@ -17,7 +17,7 @@ pub use error::*;
 pub use logging::*;
 pub use query_core;
 pub use query_result::*;
-pub use request_handlers::{GraphQlBody, MultiQuery};
+pub use request_handlers::{GraphqlBody, MultiQuery};
 pub use runner::*;
 pub use schema_gen::*;
 pub use templating::*;
@@ -36,10 +36,13 @@ pub type TestResult<T> = Result<T, TestError>;
 
 lazy_static! {
     /// Test configuration, loaded once at runtime.
-    pub static ref CONFIG: TestConfig = TestConfig::load().unwrap();
+    pub static ref CONFIG: TestConfig = TestConfig::load();
 
     /// The log level from the environment.
     pub static ref ENV_LOG_LEVEL: String = std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_owned());
+
+    /// Engine protocol used to run tests. Either 'graphql' or 'json'.
+    pub static ref ENGINE_PROTOCOL: String = std::env::var("PRISMA_ENGINE_PROTOCOL").unwrap_or_else(|_| "graphql".to_owned());
 }
 
 /// Setup of everything as defined in the passed datamodel.
@@ -164,7 +167,7 @@ fn run_relation_link_test_impl(
                 println!("Used datamodel:\n {}", datamodel.clone().yellow());
                 setup_project(&datamodel, Default::default()).await.unwrap();
 
-                let runner = Runner::load(config.runner(), datamodel.clone(), connector, metrics, log_capture)
+                let runner = Runner::load(datamodel.clone(), connector, metrics, log_capture)
                     .await
                     .unwrap();
 
@@ -247,6 +250,7 @@ pub fn run_connector_test_impl(
     test_fn: &dyn Fn(Runner) -> BoxFuture<'static, TestResult<()>>,
 ) {
     let config: &'static _ = &crate::CONFIG;
+
     if !ConnectorTag::should_run(config, enabled_connectors, capabilities, test_name) {
         return;
     }
@@ -272,15 +276,9 @@ pub fn run_connector_test_impl(
             println!("Used datamodel:\n {}", datamodel.clone().yellow());
             crate::setup_project(&datamodel, db_schemas).await.unwrap();
 
-            let runner = Runner::load(
-                crate::CONFIG.runner(),
-                datamodel.clone(),
-                connector,
-                metrics,
-                log_capture,
-            )
-            .await
-            .unwrap();
+            let runner = Runner::load(datamodel.clone(), connector, metrics, log_capture)
+                .await
+                .unwrap();
 
             test_fn(runner).await.unwrap();
 

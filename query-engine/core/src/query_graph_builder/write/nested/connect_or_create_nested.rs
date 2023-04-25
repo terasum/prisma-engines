@@ -7,13 +7,13 @@ use crate::{
 use connector::{Filter, IntoFilter};
 use prisma_models::{ModelRef, RelationFieldRef, SelectionResult};
 use schema_builder::constants::args;
-use std::{convert::TryInto, sync::Arc};
+use std::convert::TryInto;
 
 /// Handles nested connect or create cases.
 ///
 /// The resulting graph can take multiple forms, based on the relation type to the parent model.
 /// Information on the graph shapes can be found on the individual handlers.
-pub fn nested_connect_or_create(
+pub(crate) fn nested_connect_or_create(
     graph: &mut QueryGraph,
     connector_ctx: &ConnectorContext,
     parent_node: NodeRef,
@@ -105,21 +105,21 @@ fn handle_many_to_many(
         let create_arg = value.remove(args::CREATE).unwrap();
         let create_map: ParsedInputMap = create_arg.try_into()?;
 
-        let filter = extract_unique_filter(where_map, &child_model)?;
+        let filter = extract_unique_filter(where_map, child_model)?;
         let read_node = graph.create_node(utils::read_ids_infallible(
             child_model.clone(),
             child_model.primary_identifier(),
             filter,
         ));
 
-        let create_node = create::create_record_node(graph, connector_ctx, Arc::clone(child_model), create_map)?;
+        let create_node = create::create_record_node(graph, connector_ctx, child_model.clone(), create_map)?;
         let if_node = graph.create_node(Flow::default_if());
 
         let connect_exists_node =
-            connect::connect_records_node(graph, &parent_node, &read_node, &parent_relation_field, 1)?;
+            connect::connect_records_node(graph, &parent_node, &read_node, parent_relation_field, 1)?;
 
         let _connect_create_node =
-            connect::connect_records_node(graph, &parent_node, &create_node, &parent_relation_field, 1)?;
+            connect::connect_records_node(graph, &parent_node, &create_node, parent_relation_field, 1)?;
 
         graph.create_edge(&parent_node, &read_node, QueryGraphDependency::ExecutionOrder)?;
         graph.create_edge(
@@ -192,7 +192,7 @@ fn handle_one_to_one(
     let create_arg = value.remove(args::CREATE).unwrap();
     let create_data: ParsedInputMap = create_arg.try_into()?;
 
-    let filter = extract_unique_filter(where_map, &child_model)?;
+    let filter = extract_unique_filter(where_map, child_model)?;
 
     if parent_relation_field.is_inlined_on_enclosing_model() {
         one_to_one_inlined_parent(
@@ -266,7 +266,7 @@ fn one_to_many_inlined_child(
         let create_arg = value.remove(args::CREATE).unwrap();
         let create_map: ParsedInputMap = create_arg.try_into()?;
 
-        let filter = extract_unique_filter(where_map, &child_model)?;
+        let filter = extract_unique_filter(where_map, child_model)?;
         let read_node = graph.create_node(utils::read_ids_infallible(
             child_model.clone(),
             child_link.clone(),
@@ -274,8 +274,8 @@ fn one_to_many_inlined_child(
         ));
 
         let if_node = graph.create_node(Flow::default_if());
-        let update_child_node = utils::update_records_node_placeholder(graph, filter, Arc::clone(child_model));
-        let create_node = create::create_record_node(graph, connector_ctx, Arc::clone(child_model), create_map)?;
+        let update_child_node = utils::update_records_node_placeholder(graph, filter, child_model.clone());
+        let create_node = create::create_record_node(graph, connector_ctx, child_model.clone(), create_map)?;
 
         graph.create_edge(&parent_node, &read_node, QueryGraphDependency::ExecutionOrder)?;
         graph.create_edge(&if_node, &update_child_node, QueryGraphDependency::Then)?;
@@ -405,7 +405,7 @@ fn one_to_many_inlined_parent(
     let create_arg = value.remove(args::CREATE).unwrap();
     let create_map: ParsedInputMap = create_arg.try_into()?;
 
-    let filter = extract_unique_filter(where_map, &child_model)?;
+    let filter = extract_unique_filter(where_map, child_model)?;
     let read_node = graph.create_node(utils::read_ids_infallible(
         child_model.clone(),
         child_link.clone(),
@@ -416,7 +416,7 @@ fn one_to_many_inlined_parent(
     graph.create_edge(&parent_node, &read_node, QueryGraphDependency::ExecutionOrder)?;
 
     let if_node = graph.create_node(Flow::default_if());
-    let create_node = create::create_record_node(graph, connector_ctx, Arc::clone(child_model), create_map)?;
+    let create_node = create::create_record_node(graph, connector_ctx, child_model.clone(), create_map)?;
     let return_existing = graph.create_node(Flow::Return(None));
     let return_create = graph.create_node(Flow::Return(None));
 
@@ -578,7 +578,7 @@ fn one_to_one_inlined_parent(
     graph.create_edge(&parent_node, &read_node, QueryGraphDependency::ExecutionOrder)?;
 
     let if_node = graph.create_node(Flow::default_if());
-    let create_node = create::create_record_node(graph, connector_ctx, Arc::clone(child_model), create_data)?;
+    let create_node = create::create_record_node(graph, connector_ctx, child_model.clone(), create_data)?;
     let return_existing = graph.create_node(Flow::Return(None));
     let return_create = graph.create_node(Flow::Return(None));
 
@@ -660,11 +660,11 @@ fn one_to_one_inlined_parent(
     } else {
         // Perform checks that no existing child in a required relation is violated.
         graph.create_edge(&if_node, &parent_node, QueryGraphDependency::ExecutionOrder)?;
-        utils::insert_existing_1to1_related_model_checks(graph, &parent_node, &parent_relation_field)?;
+        utils::insert_existing_1to1_related_model_checks(graph, &parent_node, parent_relation_field)?;
 
         let parent_model = parent_relation_field.model();
         let update_parent_node = utils::update_records_node_placeholder(graph, Filter::empty(), parent_model.clone());
-        let relation_name = parent_relation_field.relation().name().to_owned();
+        let relation_name = parent_relation_field.relation().name();
         let parent_model_name = parent_model.name().to_owned();
         let child_model_name = child_model.name().to_owned();
 
@@ -687,7 +687,7 @@ fn one_to_one_inlined_parent(
             })),
         )?;
 
-        let relation_name = parent_relation_field.relation().name().to_owned();
+        let relation_name = parent_relation_field.relation().name();
         let parent_model_name = parent_model.name().to_owned();
         let child_model_name = child_model.name().to_owned();
 
@@ -821,7 +821,7 @@ fn one_to_one_inlined_child(
 
     // *** Then branch handling ***
     let update_new_child_node = utils::update_records_node_placeholder(graph, Filter::empty(), child_model.clone());
-    let relation_name = parent_relation_field.relation().name().to_owned();
+    let relation_name = parent_relation_field.relation().name();
     let parent_model_name = parent_relation_field.model().name().to_owned();
     let child_model_name = child_model.name().to_owned();
 
@@ -845,7 +845,7 @@ fn one_to_one_inlined_child(
         })),
     )?;
 
-    let relation_name = parent_relation_field.relation().name().to_owned();
+    let relation_name = parent_relation_field.relation().name();
     let parent_model_name = parent_relation_field.model().name().to_owned();
     let child_model_name = child_model.name().to_owned();
     let child_link = parent_relation_field.related_field().linking_fields();
@@ -870,7 +870,7 @@ fn one_to_one_inlined_child(
         })),
     )?;
 
-    let relation_name = parent_relation_field.relation().name().to_owned();
+    let relation_name = parent_relation_field.relation().name();
     let parent_model_name = parent_relation_field.model().name().to_owned();
     let child_model_name = child_model.name().to_owned();
     let child_link = parent_relation_field.related_field().linking_fields();
@@ -961,10 +961,10 @@ fn one_to_one_inlined_child(
 
         // update old child, set link to null
         let update_old_child_node = utils::update_records_node_placeholder(graph, Filter::empty(), child_model.clone());
-        let relation_name = parent_relation_field.relation().name().to_owned();
+        let relation_name = parent_relation_field.relation().name();
         let parent_model_name = parent_relation_field.model().name().to_owned();
         let child_model_name = child_model.name().to_owned();
-        let rf = Arc::clone(&parent_relation_field);
+        let rf = parent_relation_field.clone();
 
         // Edge: Read old child node -> update old child
         graph.create_edge(

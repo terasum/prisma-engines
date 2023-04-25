@@ -5,7 +5,7 @@ use prisma_models::{
     CompositeFieldRef, Field, ModelRef, PrismaValue, RelationFieldRef, ScalarFieldRef, TypeIdentifier,
 };
 use schema_builder::constants::{args, json_null, operations};
-use std::{convert::TryInto, sync::Arc};
+use std::convert::TryInto;
 
 #[derive(Debug)]
 pub struct WriteArgsParser {
@@ -29,23 +29,23 @@ impl WriteArgsParser {
                     Field::Scalar(sf) if sf.is_list() => {
                         let write_op = parse_scalar_list(v)?;
 
-                        args.args.insert(sf, write_op);
+                        args.args.insert(&sf, write_op);
                     }
                     Field::Scalar(sf) => {
-                        let write_op: WriteOperation = parse_scalar(sf, v)?;
+                        let write_op: WriteOperation = parse_scalar(&sf, v)?;
 
-                        args.args.insert(sf, write_op)
+                        args.args.insert(&sf, write_op)
                     }
 
                     Field::Relation(ref rf) => match v {
                         ParsedInputValue::Single(PrismaValue::Null) => (),
-                        _ => args.nested.push((Arc::clone(rf), v.try_into()?)),
+                        _ => args.nested.push((rf.clone(), v.try_into()?)),
                     },
 
                     Field::Composite(cf) => {
-                        let write_op = parse_composite_writes(cf, v, &mut vec![])?;
+                        let write_op = parse_composite_writes(&cf, v, &mut vec![])?;
 
-                        args.args.insert(cf, write_op)
+                        args.args.insert(&cf, write_op)
                     }
                 };
 
@@ -159,7 +159,7 @@ fn parse_composite_update_many(
     path: &mut [DatasourceFieldName],
 ) -> QueryGraphBuilderResult<WriteOperation> {
     let where_map: ParsedInputMap = value.remove(args::WHERE).unwrap().try_into()?;
-    let filter = extract_filter(where_map, &cf.typ)?;
+    let filter = extract_filter(where_map, cf.typ())?;
 
     let update_map: ParsedInputMap = value.remove(args::DATA).unwrap().try_into()?;
     let update = parse_composite_updates(cf, update_map, path)?
@@ -174,7 +174,7 @@ fn parse_composite_delete_many(
     mut value: ParsedInputMap,
 ) -> QueryGraphBuilderResult<WriteOperation> {
     let where_map: ParsedInputMap = value.remove(args::WHERE).unwrap().try_into()?;
-    let filter = extract_filter(where_map, &cf.typ)?;
+    let filter = extract_filter(where_map, cf.typ())?;
 
     Ok(WriteOperation::composite_delete_many(filter))
 }
@@ -206,9 +206,10 @@ fn parse_composite_updates(
     let mut writes = vec![];
 
     for (k, v) in map {
-        let field = cf.typ.find_field(&k).unwrap();
+        let typ = cf.typ();
+        let field = typ.find_field(&k).unwrap();
 
-        let field_name: DatasourceFieldName = match field {
+        let field_name: DatasourceFieldName = match &field {
             Field::Scalar(sf) => sf.into(),
             Field::Composite(cf) => cf.into(),
             _ => unreachable!(),
@@ -216,8 +217,8 @@ fn parse_composite_updates(
 
         let write_op = match field {
             Field::Scalar(sf) if sf.is_list() => parse_scalar_list(v),
-            Field::Scalar(sf) => parse_scalar(sf, v),
-            Field::Composite(cf) => parse_composite_writes(cf, v, &mut path.to_owned()),
+            Field::Scalar(sf) => parse_scalar(&sf, v),
+            Field::Composite(cf) => parse_composite_writes(&cf, v, &mut path.to_owned()),
             _ => unreachable!(),
         }?;
 

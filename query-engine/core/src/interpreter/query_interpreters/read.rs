@@ -9,7 +9,7 @@ use prisma_models::ManyRecords;
 use std::collections::HashMap;
 use user_facing_errors::KnownError;
 
-pub fn execute<'conn>(
+pub(crate) fn execute<'conn>(
     tx: &'conn mut dyn ConnectionLike,
     query: ReadQuery,
     parent_result: Option<&'conn ManyRecords>,
@@ -147,10 +147,9 @@ fn read_related<'conn>(
 ) -> BoxFuture<'conn, InterpretationResult<QueryResult>> {
     let fut = async move {
         let relation = query.parent_field.relation();
-        let is_m2m = relation.is_many_to_many();
         let processor = InMemoryRecordProcessor::new_from_query_args(&mut query.args);
 
-        let (scalars, aggregation_rows) = if is_m2m {
+        let (scalars, aggregation_rows) = if relation.is_many_to_many() {
             nested_read::m2m(tx, &query, parent_result, processor, trace_id).await?
         } else {
             nested_read::one2m(
@@ -243,7 +242,7 @@ fn process_nested<'conn>(
 /// This means the SQL result we get back from the database contains additional aggregation data that needs to be remapped according to the schema
 /// This function takes care of removing the aggregation data from the database result and collects it separately
 /// so that it can be serialized separately later according to the schema
-pub fn extract_aggregation_rows_from_scalars(
+pub(crate) fn extract_aggregation_rows_from_scalars(
     mut scalars: ManyRecords,
     aggr_selections: Vec<RelAggregationSelection>,
 ) -> (ManyRecords, Option<Vec<RelAggregationRow>>) {
