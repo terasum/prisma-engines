@@ -210,12 +210,15 @@ impl<'tx> WriteOperations for SqlConnectorTransaction<'tx> {
         .await
     }
 
-    #[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
     async fn native_upsert_record(
         &mut self,
         upsert: connector_interface::NativeUpsert,
         trace_id: Option<String>,
     ) -> connector::Result<SingleRecord> {
+        #[cfg(not(any(feature = "postgresql", feature = "mssql", feature = "sqlite")))]
+        unreachable!();
+
+        #[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
         catch(self.connection_info.clone(), async move {
             let ctx = Context::new(&self.connection_info, trace_id.as_deref());
             upsert::native_upsert(&self.inner, upsert, &ctx).await

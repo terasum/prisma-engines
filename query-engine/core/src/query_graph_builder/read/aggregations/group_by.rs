@@ -6,7 +6,7 @@ use connector::Filter;
 use prisma_models::{ModelRef, OrderBy, ScalarFieldRef};
 use schema_builder::constants::args;
 
-pub fn group_by(mut field: ParsedField, model: ModelRef) -> QueryGraphBuilderResult<ReadQuery> {
+pub(crate) fn group_by(mut field: ParsedField, model: ModelRef) -> QueryGraphBuilderResult<ReadQuery> {
     let name = field.name;
     let alias = field.alias;
     let model = model;
@@ -50,7 +50,7 @@ fn verify_selections(selectors: &[AggregationSelection], group_by: &[ScalarField
 
     for selector in selectors {
         if let AggregationSelection::Field(field) = selector {
-            if !group_by.contains(&field) {
+            if !group_by.contains(field) {
                 missing_fields.push(field.name().to_owned());
             }
         }

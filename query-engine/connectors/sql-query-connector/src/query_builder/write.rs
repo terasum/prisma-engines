@@ -1,6 +1,5 @@
 use crate::{model_extensions::*, sql_trace::SqlTraceComment, Context};
 use connector_interface::{DatasourceFieldName, ScalarWriteOperation, WriteArgs};
-use itertools::Itertools;
 use prisma_models::*;
 use quaint::ast::*;
 use std::{collections::HashSet, convert::TryInto};
@@ -74,7 +73,11 @@ pub(crate) fn create_records_nonempty(
         })
         .collect();
 
-    let columns = affected_fields.iter().collect_vec().as_columns(ctx);
+    let columns = affected_fields
+        .iter()
+        .map(Clone::clone)
+        .collect::<Vec<_>>()
+        .as_columns(ctx);
     let insert = Insert::multi_into(model.as_table(ctx), columns);
     let insert = values.into_iter().fold(insert, |stmt, values| stmt.values(values));
     let insert: Insert = insert.into();
@@ -116,7 +119,7 @@ pub(crate) fn build_update_and_set_query(model: &ModelRef, args: WriteArgs, ctx:
                 ScalarWriteOperation::Field(_) => unimplemented!(),
                 ScalarWriteOperation::Set(rhs) => field.value(rhs).into(),
                 ScalarWriteOperation::Add(rhs) if field.is_list() => {
-                    let e: Expression = Column::from(name.clone()).into();
+                    let e: Expression = Column::from((table.clone(), name.clone())).into();
                     let vals: Vec<_> = match rhs {
                         PrismaValue::List(vals) => vals.into_iter().map(|val| field.value(val)).collect(),
                         _ => vec![field.value(rhs)],

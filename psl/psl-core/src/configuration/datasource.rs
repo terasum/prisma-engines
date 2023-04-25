@@ -154,40 +154,42 @@ impl Datasource {
     where
         F: Fn(&str) -> Option<String>,
     {
-        self.direct_url.clone()
+        let validate_direct_url = |(url, span)| {
+            let handle_err = |err| match err {
+                UrlValidationError::EmptyUrlValue => {
+                    let msg = "You must provide a nonempty direct URL";
+                    Err(DatamodelError::new_source_validation_error(msg, &self.name, span).into())
+                }
+                UrlValidationError::EmptyEnvValue(env_var) => {
+                    let msg = format!(
+                        "You must provide a nonempty direct URL. The environment variable `{env_var}` resolved to an empty string."
+                    );
+
+                    Err(DatamodelError::new_source_validation_error(&msg, &self.name, span).into())
+                }
+                UrlValidationError::NoEnvValue(env_var) => {
+                    let e = DatamodelError::new_environment_functional_evaluation_error(env_var, span);
+                    Err(e.into())
+                }
+                UrlValidationError::NoUrlOrEnv => self.load_url(&env),
+            };
+
+            let url = from_url(&url, &env).map_or_else(handle_err, Result::Ok)?;
+
+            if url.starts_with("prisma://") {
+                let msg = "You must provide a direct URL that points directly to the database. Using `prisma` in URL scheme is not allowed.";
+                let e = DatamodelError::new_source_validation_error(msg, &self.name, span);
+
+                Err(e.into())
+            } else {
+                Ok(url)
+            }
+        };
+
+        self.direct_url
+            .clone()
             .and_then(|url| self.direct_url_span.map(|span| (url, span)))
-            .map_or_else(
-            || self.load_url(&env),
-            |(url, span)| {
-                from_url(&url, &env).map_or_else(
-                    |err| match err {
-                        UrlValidationError::EmptyUrlValue => {
-                            let msg = "You must provide a nonempty direct URL";
-                            Err(DatamodelError::new_source_validation_error(msg, &self.name, span).into())
-                        }
-                        UrlValidationError::EmptyEnvValue(env_var) => {
-                            Err(DatamodelError::new_source_validation_error(
-                                &format!(
-                                    "You must provide a nonempty direct URL. The environment variable `{env_var}` resolved to an empty string."
-                                ),
-                                &self.name,
-                                span,
-                            )
-                            .into())
-                        }
-                        UrlValidationError::NoEnvValue(env_var) => {
-                            Err(DatamodelError::new_environment_functional_evaluation_error(
-                                env_var,
-                                span,
-                            )
-                            .into())
-                        }
-                        UrlValidationError::NoUrlOrEnv => self.load_url(&env),
-                    },
-                    Result::Ok,
-                )
-            },
-        )
+            .map_or_else(|| self.load_url(&env), validate_direct_url)
     }
 
     /// Same as `load_url()`, with the following difference.
@@ -242,6 +244,31 @@ impl Datasource {
         }
 
         Ok(Some(url))
+    }
+
+    // Validation for property existence
+    pub fn provider_defined(&self) -> bool {
+        !self.provider.is_empty()
+    }
+
+    pub fn url_defined(&self) -> bool {
+        self.url_span.end > self.url_span.start
+    }
+
+    pub fn direct_url_defined(&self) -> bool {
+        self.direct_url.is_some()
+    }
+
+    pub fn shadow_url_defined(&self) -> bool {
+        self.shadow_database_url.is_some()
+    }
+
+    pub fn relation_mode_defined(&self) -> bool {
+        self.relation_mode.is_some()
+    }
+
+    pub fn schemas_defined(&self) -> bool {
+        self.schemas_span.is_some()
     }
 }
 

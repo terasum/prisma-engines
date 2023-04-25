@@ -3,10 +3,10 @@ use super::{FilteredNestedMutation, FilteredQuery};
 use crate::{RecordQuery, ToGraphviz};
 use connector::{filter::Filter, DatasourceFieldName, NativeUpsert, RecordFilter, WriteArgs};
 use prisma_models::prelude::*;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
-pub enum WriteQuery {
+pub(crate) enum WriteQuery {
     CreateRecord(CreateRecord),
     CreateManyRecords(CreateManyRecords),
     UpdateRecord(UpdateRecord),
@@ -73,13 +73,13 @@ impl WriteQuery {
 
     pub fn model(&self) -> ModelRef {
         match self {
-            Self::CreateRecord(q) => Arc::clone(&q.model),
-            Self::CreateManyRecords(q) => Arc::clone(&q.model),
-            Self::UpdateRecord(q) => Arc::clone(&q.model),
+            Self::CreateRecord(q) => q.model.clone(),
+            Self::CreateManyRecords(q) => q.model.clone(),
+            Self::UpdateRecord(q) => q.model.clone(),
             Self::Upsert(q) => q.model().clone(),
-            Self::DeleteRecord(q) => Arc::clone(&q.model),
-            Self::UpdateManyRecords(q) => Arc::clone(&q.model),
-            Self::DeleteManyRecords(q) => Arc::clone(&q.model),
+            Self::DeleteRecord(q) => q.model.clone(),
+            Self::UpdateManyRecords(q) => q.model.clone(),
+            Self::DeleteManyRecords(q) => q.model.clone(),
             Self::ConnectRecords(q) => q.relation_field.model(),
             Self::DisconnectRecords(q) => q.relation_field.model(),
             Self::ExecuteRaw(_) => unimplemented!(),
@@ -130,7 +130,7 @@ impl FilteredQuery for WriteQuery {
 }
 
 impl std::fmt::Display for WriteQuery {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::CreateRecord(q) => write!(f, "CreateRecord(model: {}, args: {:?})", q.model.name(), q.args),
             Self::CreateManyRecords(q) => write!(f, "CreateManyRecord(model: {})", q.model.name()),

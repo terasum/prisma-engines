@@ -1,9 +1,8 @@
-use crate::scalars::ScalarType;
 use prisma_value::PrismaValue;
 use std::fmt;
 
 /// Represents a default specified on a field.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct DefaultValue {
     pub kind: DefaultKind,
     pub db_name: Option<String>,
@@ -55,6 +54,25 @@ impl DefaultKind {
             _ => panic!("called DefaultValue::unwrap_single() on wrong variant"),
         }
     }
+
+    // Returns the dbgenerated function for a default value
+    // intended for primary key values!
+    pub fn to_dbgenerated_func(&self) -> Option<String> {
+        match self {
+            DefaultKind::Expression(ref expr) if expr.is_dbgenerated() => expr.args.get(0).map(|val| val.1.to_string()),
+            _ => None,
+        }
+    }
+
+    /// Returns either a copy of the contained single value or produces a new
+    /// value as defined by the expression.
+    #[cfg(feature = "default_generators")]
+    pub fn get(&self) -> Option<PrismaValue> {
+        match self {
+            DefaultKind::Single(ref v) => Some(v.clone()),
+            DefaultKind::Expression(ref g) => g.generate(),
+        }
+    }
 }
 
 impl DefaultValue {
@@ -69,30 +87,6 @@ impl DefaultValue {
         match self.kind {
             DefaultKind::Single(ref v) => Some(v),
             _ => None,
-        }
-    }
-
-    pub fn kind(&self) -> &DefaultKind {
-        &self.kind
-    }
-
-    pub fn into_kind(self) -> DefaultKind {
-        self.kind
-    }
-
-    pub fn mut_kind(&mut self) -> &mut DefaultKind {
-        &mut self.kind
-    }
-
-    /// Returns either a copy of the contained single value or produces a new
-    /// value as defined by the expression.
-    pub fn get(&self) -> Option<PrismaValue> {
-        match self.kind {
-            DefaultKind::Single(ref v) => Some(v.clone()),
-            #[cfg(feature = "default_generators")]
-            DefaultKind::Expression(ref g) => g.generate(),
-            #[cfg(not(feature = "default_generators"))]
-            DefaultKind::Expression(_) => unreachable!(),
         }
     }
 
@@ -145,15 +139,6 @@ impl DefaultValue {
     /// The default value constraint name.
     pub fn db_name(&self) -> Option<&str> {
         self.db_name.as_deref()
-    }
-
-    // Returns the dbgenerated function for a default value
-    // intended for primary key values!
-    pub fn to_dbgenerated_func(&self) -> Option<String> {
-        match self.kind {
-            DefaultKind::Expression(ref expr) if expr.is_dbgenerated() => expr.args.get(0).map(|val| val.1.to_string()),
-            _ => None,
-        }
     }
 }
 
@@ -240,17 +225,6 @@ impl ValueGenerator {
         self.generator.invoke()
     }
 
-    pub fn check_compatibility_with_scalar_type(&self, scalar_type: ScalarType) -> Result<(), String> {
-        if self.generator.can_handle(scalar_type) {
-            Ok(())
-        } else {
-            Err(format!(
-                "The function `{}()` cannot be used on fields of type `{scalar_type}`.",
-                &self.name
-            ))
-        }
-    }
-
     pub fn is_dbgenerated(&self) -> bool {
         self.name == "dbgenerated"
     }
@@ -299,21 +273,6 @@ impl ValueGeneratorFn {
         }
     }
 
-    fn can_handle(&self, scalar_type: ScalarType) -> bool {
-        #[allow(clippy::match_like_matches_macro)]
-        match (self, scalar_type) {
-            (Self::Uuid, ScalarType::String) => true,
-            (Self::Cuid, ScalarType::String) => true,
-            (Self::Nanoid(_), ScalarType::String) => true,
-            (Self::Now, ScalarType::DateTime) => true,
-            (Self::Autoincrement, ScalarType::Int) => true,
-            (Self::Autoincrement, ScalarType::BigInt) => true,
-            (Self::DbGenerated, _) => true,
-            (Self::Auto, _) => true,
-            _ => false,
-        }
-    }
-
     #[cfg(feature = "default_generators")]
     fn generate_cuid() -> PrismaValue {
         PrismaValue::String(cuid::cuid().unwrap())
@@ -346,9 +305,9 @@ impl PartialEq for ValueGenerator {
     }
 }
 
-impl fmt::Debug for DefaultValue {
+impl fmt::Debug for DefaultKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.kind {
+        match &self {
             DefaultKind::Single(ref v) => write!(f, "DefaultValue::Single({v:?})"),
             DefaultKind::Expression(g) => write!(f, "DefaultValue::Expression({}(){:?})", g.name(), g.args),
         }

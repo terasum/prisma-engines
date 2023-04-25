@@ -38,7 +38,6 @@ impl OrderByBuilder {
                     self.build_order_aggr_scalar(order_by, needs_reversed_order, ctx)
                 }
                 OrderBy::ToManyAggregation(order_by) => self.build_order_aggr_rel(order_by, needs_reversed_order, ctx),
-                #[cfg(any(feature = "postgresql", feature = "mysql"))]
                 OrderBy::Relevance(order_by) => self.build_order_relevance(order_by, needs_reversed_order, ctx),
             })
             .collect_vec()
@@ -65,22 +64,27 @@ impl OrderByBuilder {
         }
     }
 
-    #[cfg(any(feature = "postgresql", feature = "mysql"))]
     fn build_order_relevance(
         &mut self,
         order_by: &OrderByRelevance,
         needs_reversed_order: bool,
         ctx: &Context<'_>,
     ) -> OrderByDefinition {
-        let columns: Vec<Expression> = order_by.fields.iter().map(|sf| sf.as_column(ctx).into()).collect();
-        let order_column: Expression = text_search_relevance(&columns, order_by.search.clone()).into();
-        let order: Option<Order> = Some(into_order(&order_by.sort_order, None, needs_reversed_order));
-        let order_definition: OrderDefinition = (order_column.clone(), order);
+        #[cfg(not(any(feature = "postgresql", feature = "mysql")))]
+        unreachable!();
 
-        OrderByDefinition {
-            order_column,
-            order_definition,
-            joins: vec![],
+        #[cfg(any(feature = "postgresql", feature = "mysql"))]
+        {
+            let columns: Vec<Expression> = order_by.fields.iter().map(|sf| sf.as_column(ctx).into()).collect();
+            let order_column: Expression = text_search_relevance(&columns, order_by.search.clone()).into();
+            let order: Option<Order> = Some(into_order(&order_by.sort_order, None, needs_reversed_order));
+            let order_definition: OrderDefinition = (order_column.clone(), order);
+
+            OrderByDefinition {
+                order_column,
+                order_definition,
+                joins: vec![],
+            }
         }
     }
 
