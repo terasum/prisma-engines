@@ -1,9 +1,13 @@
 mod connection;
 #[cfg(feature = "js-connectors")]
 mod js;
+#[cfg(feature = "mssql")]
 mod mssql;
+#[cfg(feature = "mysql")]
 mod mysql;
+#[cfg(feature = "postgresql")]
 mod postgresql;
+#[cfg(feature = "sqlite")]
 mod sqlite;
 mod transaction;
 
@@ -14,9 +18,13 @@ use connector_interface::{error::ConnectorError, Connector};
 
 #[cfg(feature = "js-connectors")]
 pub use js::*;
+#[cfg(feature = "mssql")]
 pub use mssql::*;
+#[cfg(feature = "mysql")]
 pub use mysql::*;
+#[cfg(feature = "postgresql")]
 pub use postgresql::*;
+#[cfg(feature = "sqlite")]
 pub use sqlite::*;
 
 #[async_trait]

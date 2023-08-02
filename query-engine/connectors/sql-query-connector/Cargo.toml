@@ -6,6 +6,10 @@ version = "0.1.0"
 [features]
 vendored-openssl = ["quaint/vendored-openssl"]
 js-connectors = []
+mssql = ["user-facing-errors/mssql"]
+mysql = ["user-facing-errors/mysql"]
+postgresql = ["user-facing-errors/postgresql"]
+sqlite = ["user-facing-errors/sqlite"]
 
 [dependencies]
 psl.workspace = true

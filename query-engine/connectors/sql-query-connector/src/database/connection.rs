@@ -233,11 +233,16 @@ where
         record_filter: RecordFilter,
         trace_id: Option<String>,
     ) -> connector::Result<usize> {
-        catch(self.connection_info.clone(), async move {
-            let ctx = Context::new(&self.connection_info, trace_id.as_deref());
-            write::delete_records(&self.inner, model, record_filter, &ctx).await
-        })
-        .await
+        #[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
+        {
+            catch(self.connection_info.clone(), async move {
+                let ctx = Context::new(&self.connection_info, trace_id.as_deref());
+                write::delete_records(&self.inner, model, record_filter, &ctx).await
+            })
+            .await
+        }
+        #[cfg(not(any(feature = "postgresql", feature = "mssql", feature = "sqlite")))]
+        unreachable!()
     }
 
     async fn native_upsert_record(

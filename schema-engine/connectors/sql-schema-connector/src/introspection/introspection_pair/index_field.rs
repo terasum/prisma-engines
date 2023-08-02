@@ -59,12 +59,13 @@ impl<'a> IndexFieldPair<'a> {
     }
 
     /// A PostgreSQL specific operator class for the indexed column.
+    #[cfg(feature = "postgresql")]
     pub(crate) fn opclass(self) -> Option<IndexOps<'a>> {
         if !self.context.sql_family.is_postgres() {
             return None;
         }
 
-        let ext: &PostgresSchemaExt = self.context.sql_schema.downcast_connector_data();
+        let ext: &sql::postgres::PostgresSchemaExt = self.context.sql_schema.downcast_connector_data();
 
         let next = match self.next {
             Some(next) => next,

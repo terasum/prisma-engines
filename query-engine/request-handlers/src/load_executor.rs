@@ -7,6 +7,8 @@ use url::Url;
 
 #[cfg(feature = "mongodb")]
 use mongodb_query_connector::MongoDb;
+#[cfg(feature = "sql")]
+use sql_query_connector::*;
 
 /// Loads a query executor based on the parsed Prisma schema (datasource).
 pub async fn load(
@@ -15,10 +17,15 @@ pub async fn load(
     url: &str,
 ) -> query_core::Result<Box<dyn QueryExecutor + Send + Sync + 'static>> {
     match source.active_provider {
+        #[cfg(feature = "sqlite")]
         p if SQLITE.is_provider(p) => sqlite(source, url, features).await,
+        #[cfg(feature = "mysql")]
         p if MYSQL.is_provider(p) => mysql(source, url, features).await,
+        #[cfg(feature = "postgresql")]
         p if POSTGRES.is_provider(p) => postgres(source, url, features).await,
+        #[cfg(feature = "mssql")]
         p if MSSQL.is_provider(p) => mssql(source, url, features).await,
+        #[cfg(feature = "postgresql")]
         p if COCKROACH.is_provider(p) => postgres(source, url, features).await,
 
         #[cfg(feature = "mongodb")]
@@ -33,6 +40,7 @@ pub async fn load(
     }
 }
 
+#[cfg(feature = "sqlite")]
 async fn sqlite(
     source: &Datasource,
     url: &str,
@@ -44,6 +52,7 @@ async fn sqlite(
     Ok(executor_for(sqlite, false))
 }
 
+#[cfg(feature = "postgresql")]
 async fn postgres(
     source: &Datasource,
     url: &str,
@@ -65,6 +74,7 @@ async fn postgres(
     Ok(executor_for(psql, force_transactions))
 }
 
+#[cfg(feature = "mysql")]
 async fn mysql(
     source: &Datasource,
     url: &str,
@@ -75,6 +85,7 @@ async fn mysql(
     Ok(executor_for(mysql, false))
 }
 
+#[cfg(feature = "mssql")]
 async fn mssql(
     source: &Datasource,
     url: &str,

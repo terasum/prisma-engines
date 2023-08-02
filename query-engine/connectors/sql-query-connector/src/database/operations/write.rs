@@ -11,7 +11,7 @@ use itertools::Itertools;
 use prisma_models::*;
 use quaint::{
     error::ErrorKind,
-    prelude::{native_uuid, uuid_to_bin, uuid_to_bin_swapped, Aliasable, Select, SqlFamily},
+    prelude::{Aliasable, Select, SqlFamily},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -21,12 +21,15 @@ use std::{
 use tracing::log::trace;
 use user_facing_errors::query_engine::DatabaseConstraint;
 
+#[cfg(feature = "mysql")]
 async fn generate_id(
     conn: &dyn Queryable,
     id_field: &FieldSelection,
     args: &WriteArgs,
     ctx: &Context<'_>,
 ) -> crate::Result<Option<SelectionResult>> {
+    use quaint::prelude::{native_uuid, uuid_to_bin, uuid_to_bin_swapped};
+
     // Go through all the values and generate a select statement with the correct MySQL function
     let (id_select, need_select) = id_field
         .selections()
@@ -74,15 +77,16 @@ pub(crate) async fn create_record(
 ) -> crate::Result<SingleRecord> {
     let id_field: FieldSelection = model.primary_identifier();
 
-    let returned_id = if *sql_family == SqlFamily::Mysql {
-        generate_id(conn, &id_field, &args, ctx)
+    let returned_id = match sql_family {
+        #[cfg(feature = "mysql")]
+        SqlFamily::Mysql => generate_id(conn, &id_field, &args, ctx)
             .await?
-            .or_else(|| args.as_selection_result(ModelProjection::from(id_field)))
-    } else {
-        args.as_selection_result(ModelProjection::from(id_field))
+            .or_else(|| args.as_selection_result(ModelProjection::from(id_field))),
+        _ => args.as_selection_result(ModelProjection::from(id_field)),
     };
 
     let args = match returned_id {
+        #[cfg(feature = "mysql")]
         Some(ref pk) if *sql_family == SqlFamily::Mysql => {
             for (field, value) in pk.pairs.iter() {
                 let field = DatasourceFieldName(field.db_name().into());
