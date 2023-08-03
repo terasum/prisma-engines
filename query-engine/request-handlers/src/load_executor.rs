@@ -1,6 +1,5 @@
 use psl::{builtin_connectors::*, Datasource, PreviewFeatures};
 use query_core::{executor::InterpretingExecutor, Connector, QueryExecutor};
-use sql_query_connector::*;
 use std::collections::HashMap;
 use tracing::trace;
 use url::Url;
