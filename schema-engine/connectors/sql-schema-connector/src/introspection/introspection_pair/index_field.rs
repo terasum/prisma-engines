@@ -1,5 +1,4 @@
 use psl::parser_database::walkers;
-use sql::postgres::PostgresSchemaExt;
 use sql_schema_describer as sql;
 use std::borrow::Cow;
 

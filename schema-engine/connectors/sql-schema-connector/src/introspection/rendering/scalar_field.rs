@@ -97,7 +97,7 @@ fn render_unique(unique: IndexPair<'_>) -> renderer::UniqueFieldAttribute<'_> {
         opts.map(map);
     }
 
-    #[cfg(feature = "postgresql")]
+    #[cfg(feature = "mssql")]
     if let Some(clustered) = unique.clustered() {
         opts.clustered(clustered);
     }
