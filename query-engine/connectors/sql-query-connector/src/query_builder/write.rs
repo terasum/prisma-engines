@@ -7,7 +7,6 @@ use tracing::Span;
 
 /// `INSERT` a new record to the database. Resulting an `INSERT` ast and an
 /// optional `RecordProjection` if available from the arguments or model.
-#[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
 pub(crate) fn create_record(
     model: &Model,
     mut args: WriteArgs,
@@ -32,10 +31,12 @@ pub(crate) fn create_record(
             insert.value(db_name.to_owned(), field.value(value))
         });
 
-    Insert::from(insert)
-        .returning(selected_fields.as_columns(ctx))
-        .append_trace(&Span::current())
-        .add_trace_id(ctx.trace_id)
+    let insert = Insert::from(insert);
+
+    #[cfg(any(feature = "postgresql", feature = "mssql", feature = "sqlite"))]
+    let insert = insert.returning(selected_fields.as_columns(ctx));
+
+    insert.append_trace(&Span::current()).add_trace_id(ctx.trace_id)
 }
 
 /// `INSERT` new records into the database based on the given write arguments,
@@ -165,7 +166,12 @@ pub(crate) fn build_update_and_set_query(
     let query = query.append_trace(&Span::current()).add_trace_id(ctx.trace_id);
 
     let query = if let Some(selected_fields) = selected_fields {
-        query.returning(selected_fields.as_columns(ctx))
+        #[cfg(any(feature = "postgresql", feature = "sqlite"))]
+        {
+            query.returning(selected_fields.as_columns(ctx))
+        }
+        #[cfg(not(any(feature = "postgresql", feature = "sqlite")))]
+        query
     } else {
         query
     };
