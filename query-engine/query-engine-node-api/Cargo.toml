@@ -15,7 +15,7 @@ js-connectors = ["request-handlers/js-connectors", "sql-connector/js-connectors"
 
 [dependencies]
 anyhow = "1"
-async-trait = "0.1"
+async-trait = "0.1.83"
 query-core = { path = "../core" }
 request-handlers = { path = "../request-handlers" }
 query-connector = { path = "../connectors/query-connector" }

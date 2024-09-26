@@ -165,16 +165,17 @@ pub(crate) fn build_update_and_set_query(
 
     let query = query.append_trace(&Span::current()).add_trace_id(ctx.trace_id);
 
-    let query = if let Some(selected_fields) = selected_fields {
-        #[cfg(any(feature = "postgresql", feature = "sqlite"))]
-        {
-            query.returning(selected_fields.as_columns(ctx))
-        }
-        #[cfg(not(any(feature = "postgresql", feature = "sqlite")))]
-        query
-    } else {
-        query
-    };
+    // let query = if let Some(selected_fields) = selected_fields {
+        
+    //     #[cfg(any(feature = "postgresql", feature = "sqlite"))]
+    //     {
+    //         query.returning(selected_fields.as_columns(ctx))
+    //     }
+    //     #[cfg(not(any(feature = "postgresql", feature = "sqlite")))]
+    //     query
+    // } else {
+    //     query
+    // };
 
     query
 }

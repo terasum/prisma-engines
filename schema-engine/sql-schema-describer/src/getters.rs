@@ -52,13 +52,13 @@ impl Getter for ResultRow {
     #[track_caller]
     fn get_expect_string_array(&self, name: &str) -> Vec<String> {
         self.get(name)
-            .and_then(|x| x.to_vec::<String>())
+            .and_then(|x| x.clone().into_vec::<String>())
             .ok_or_else(|| format!("Getting {name} from ResultRow {self:?} as Vec<String> failed"))
             .unwrap()
     }
 
     fn get_string_array(&self, name: &str) -> Option<Vec<String>> {
-        self.get(name).and_then(|x| x.to_vec::<String>())
+        self.get(name).and_then(|x| x.clone().into_vec::<String>())
     }
 
     fn get_char(&self, name: &str) -> Option<char> {

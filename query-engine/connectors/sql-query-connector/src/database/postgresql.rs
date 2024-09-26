@@ -6,7 +6,7 @@ use connector_interface::{
     Connection, Connector,
 };
 use psl::builtin_connectors::COCKROACH;
-use quaint::{connector::PostgresFlavour, pooled::Quaint, prelude::ConnectionInfo};
+use quaint::{pooled::Quaint, prelude::ConnectionInfo};
 use std::time::Duration;
 
 pub struct PostgreSql {
@@ -43,14 +43,14 @@ impl FromSource for PostgreSql {
             .map_err(SqlError::from)
             .map_err(|sql_error| sql_error.into_connector_error(&err_conn_info))?;
 
-        let flavour = if COCKROACH.is_provider(source.active_provider) {
-            PostgresFlavour::Cockroach
-        } else {
-            PostgresFlavour::Postgres
-        };
+        // let flavour = if COCKROACH.is_provider(source.active_provider) {
+        //     PostgresFlavour::Cockroach
+        // } else {
+        //     PostgresFlavour::Postgres
+        // };
 
         // The postgres flavour is set in order to avoid a network roundtrip when connecting to the database.
-        builder.set_postgres_flavour(flavour);
+        // builder.set_postgres_flavour(flavour);
         builder.health_check_interval(Duration::from_secs(15));
         builder.test_on_check_out(true);
 

@@ -30,13 +30,14 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.8.3"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c99f64d1e06488f620f932677e24bc6e2897582980441ae90a671415bd7ec2f"
+checksum = "91429305e9f0a25f6205c5b8e0d2db09e0708a7a6df0f42212bb56c32c8ac97a"
 dependencies = [
  "cfg-if",
  "once_cell",
  "version_check",
+ "zerocopy",
 ]
 
 [[package]]
@@ -122,13 +123,13 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.57"
+version = "0.1.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76464446b8bc32758d7e88ee1a804d9914cd9b1cb264c029899680b0be29826f"
+checksum = "721cae7de5c34fbb2acd27e21e6d2cf7b886dce0c27388d46c4e6c47ea4318dd"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.99",
+ "syn 2.0.77",
 ]
 
 [[package]]
@@ -335,7 +336,7 @@ dependencies = [
 name = "builtin-psl-connectors"
 version = "0.1.0"
 dependencies = [
- "connection-string",
+ "connection-string 0.2.0",
  "either",
  "enumflags2",
  "indoc",
@@ -531,6 +532,15 @@ dependencies = [
  "either",
  "memchr",
  "unreachable",
+]
+
+[[package]]
+name = "connection-string"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b97faeec45f49581c458f8bf81992c5e3ec17d82cda99f59d3cea14eff62698d"
+dependencies = [
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -735,12 +745,11 @@ dependencies = [
 
 [[package]]
 name = "ctor"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd4056f63fce3b82d852c3da92b08ea59959890813a7f4ce9c0ff85b10cf301b"
+version = "0.2.8"
+source = "git+https://github.com/terasum/rust-ctor?rev=9bd427b0d46e347bfeca6c1130e946de700bf441#9bd427b0d46e347bfeca6c1130e946de700bf441"
 dependencies = [
  "quote",
- "syn 2.0.14",
+ "syn 2.0.77",
 ]
 
 [[package]]
@@ -1025,7 +1034,7 @@ checksum = "5e9a1f9f7d83e59740248a6e14ecf93929ade55027844dfcea78beafccc15745"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.14",
+ "syn 2.0.77",
 ]
 
 [[package]]
@@ -1064,6 +1073,12 @@ name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
+
+[[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
 
 [[package]]
 name = "fallible-streaming-iterator"
@@ -1398,20 +1413,20 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.13.2"
+version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
+checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
 dependencies = [
- "ahash 0.8.3",
+ "ahash 0.8.6",
 ]
 
 [[package]]
 name = "hashlink"
-version = "0.8.2"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0761a1b9491c4f2e3d66aa0f62d0fba0af9a0e2852e4d48ea506632a4b56e6aa"
+checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
 dependencies = [
- "hashbrown 0.13.2",
+ "hashbrown 0.14.3",
 ]
 
 [[package]]
@@ -1553,7 +1568,7 @@ dependencies = [
  "hyper",
  "native-tls",
  "tokio",
- "tokio-native-tls",
+ "tokio-native-tls 0.3.1",
 ]
 
 [[package]]
@@ -1664,7 +1679,7 @@ dependencies = [
  "chrono",
  "expect-test",
  "napi",
- "napi-derive",
+ "napi-derive 2.13.0",
  "num-bigint",
  "once_cell",
  "psl",
@@ -1813,9 +1828,9 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.26.0"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "afc22eff61b133b115c6e8c74e818c628d6d5e7a502afea6f64dee076dd94326"
+checksum = "0c10584274047cb335c23d3e61bcef8e323adae7c5c8c760540f73610177fc3f"
 dependencies = [
  "cc",
  "pkg-config",
@@ -1869,15 +1884,6 @@ name = "lru"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e999beba7b6e8345721bd280141ed958096a2e4abdf74f67ff4ce49b4b54e47a"
-dependencies = [
- "hashbrown 0.12.3",
-]
-
-[[package]]
-name = "lru"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6e8aaa3f231bb4bd57b84b2d5dc3ae7f350265df8aa96492e0bc394a1571909"
 dependencies = [
  "hashbrown 0.12.3",
 ]
@@ -2086,9 +2092,8 @@ dependencies = [
 
 [[package]]
 name = "mobc"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc79c4a77e312fee9c7bd4b957c12ad1196db73c4a81e5c0b13f02083c4f7f2f"
+version = "0.7.3"
+source = "git+https://github.com/prisma/mobc?tag=1.0.6#80462c4870a2bf6aab49da15c88c021bae531da8"
 dependencies = [
  "async-trait",
  "futures-channel",
@@ -2235,8 +2240,8 @@ checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 
 [[package]]
 name = "mysql_async"
-version = "0.31.3"
-source = "git+https://github.com/prisma/mysql_async?branch=vendored-openssl#dad187b50dc7e8ce2b61fec126822e8e172a9c8a"
+version = "0.30.0"
+source = "git+https://github.com/prisma/mysql_async?rev=e3f8bdb41d57e769412f53d0f479bf67fdcc0ee3#e3f8bdb41d57e769412f53d0f479bf67fdcc0ee3"
 dependencies = [
  "bytes",
  "crossbeam",
@@ -2245,7 +2250,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "lazy_static",
- "lru 0.8.1",
+ "lru",
  "mio",
  "mysql_common",
  "native-tls",
@@ -2253,13 +2258,12 @@ dependencies = [
  "pem",
  "percent-encoding",
  "pin-project",
- "priority-queue",
  "serde",
  "serde_json",
  "socket2",
  "thiserror",
  "tokio",
- "tokio-native-tls",
+ "tokio-native-tls 0.3.0",
  "tokio-util 0.7.3",
  "twox-hash",
  "url",
@@ -2323,12 +2327,11 @@ dependencies = [
 [[package]]
 name = "napi"
 version = "2.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "556470a21074b55be8adee5f27ca04389cfdaca323a28b4b0e9c15466de94731"
+source = "git+https://github.com/terasum/napi-rs?branch=v2.12.4#8479d8df2e39e3d07a33c5dc060c54cf375d29b9"
 dependencies = [
  "bitflags 2.1.0",
- "ctor 0.2.0",
- "napi-derive",
+ "ctor 0.2.8",
+ "napi-derive 2.12.3",
  "napi-sys",
  "once_cell",
  "serde",
@@ -2344,13 +2347,36 @@ checksum = "ebd4419172727423cf30351406c54f6cc1b354a2cfb4f1dba3e6cd07f6d5522b"
 
 [[package]]
 name = "napi-derive"
+version = "2.12.3"
+source = "git+https://github.com/terasum/napi-rs?branch=v2.12.4#8479d8df2e39e3d07a33c5dc060c54cf375d29b9"
+dependencies = [
+ "convert_case",
+ "napi-derive-backend 1.0.49",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.99",
+]
+
+[[package]]
+name = "napi-derive"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da1c6a8fa84d549aa8708fcd062372bf8ec6e849de39016ab921067d21bde367"
 dependencies = [
  "cfg-if",
  "convert_case",
- "napi-derive-backend",
+ "napi-derive-backend 1.0.52",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.99",
+]
+
+[[package]]
+name = "napi-derive-backend"
+version = "1.0.49"
+source = "git+https://github.com/terasum/napi-rs?branch=v2.12.4#8479d8df2e39e3d07a33c5dc060c54cf375d29b9"
+dependencies = [
+ "convert_case",
  "proc-macro2",
  "quote",
  "syn 1.0.99",
@@ -2374,8 +2400,7 @@ dependencies = [
 [[package]]
 name = "napi-sys"
 version = "2.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "166b5ef52a3ab5575047a9fe8d4a030cdd0f63c96f071cd6907674453b07bae3"
+source = "git+https://github.com/terasum/napi-rs?branch=v2.12.4#8479d8df2e39e3d07a33c5dc060c54cf375d29b9"
 dependencies = [
  "libloading",
 ]
@@ -2894,23 +2919,23 @@ dependencies = [
 [[package]]
 name = "postgres-native-tls"
 version = "0.5.0"
-source = "git+https://github.com/prisma/rust-postgres?rev=00d4815e58859261bdfca71c75be7dc657303f7d#00d4815e58859261bdfca71c75be7dc657303f7d"
+source = "git+https://github.com/pimeys/rust-postgres?rev=064a6a50427542e2c166e870027735aab3b52e77#064a6a50427542e2c166e870027735aab3b52e77"
 dependencies = [
  "native-tls",
  "tokio",
- "tokio-native-tls",
+ "tokio-native-tls 0.3.0",
  "tokio-postgres",
 ]
 
 [[package]]
 name = "postgres-protocol"
 version = "0.6.4"
-source = "git+https://github.com/prisma/rust-postgres?rev=00d4815e58859261bdfca71c75be7dc657303f7d#00d4815e58859261bdfca71c75be7dc657303f7d"
+source = "git+https://github.com/pimeys/rust-postgres?rev=064a6a50427542e2c166e870027735aab3b52e77#064a6a50427542e2c166e870027735aab3b52e77"
 dependencies = [
  "base64 0.13.1",
  "byteorder",
  "bytes",
- "fallible-iterator",
+ "fallible-iterator 0.2.0",
  "hmac",
  "md-5",
  "memchr",
@@ -2922,12 +2947,12 @@ dependencies = [
 [[package]]
 name = "postgres-types"
 version = "0.2.4"
-source = "git+https://github.com/prisma/rust-postgres?rev=00d4815e58859261bdfca71c75be7dc657303f7d#00d4815e58859261bdfca71c75be7dc657303f7d"
+source = "git+https://github.com/pimeys/rust-postgres?rev=064a6a50427542e2c166e870027735aab3b52e77#064a6a50427542e2c166e870027735aab3b52e77"
 dependencies = [
  "bit-vec",
  "bytes",
  "chrono",
- "fallible-iterator",
+ "fallible-iterator 0.2.0",
  "postgres-protocol",
  "serde",
  "serde_json",
@@ -2956,16 +2981,6 @@ dependencies = [
  "diff",
  "output_vt100",
  "yansi",
-]
-
-[[package]]
-name = "priority-queue"
-version = "1.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ca9c6be70d989d21a136eb86c2d83e4b328447fac4a88dace2143c179c86267"
-dependencies = [
- "autocfg",
- "indexmap",
 ]
 
 [[package]]
@@ -3057,9 +3072,9 @@ checksum = "dbf0c48bc1d91375ae5c3cd81e3722dff1abcf81a30960240640d223f59fe0e5"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.56"
+version = "1.0.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b63bdb0cd06f1f4dedf69b254734f9b45af66e4a031e42a7480257d9898b435"
+checksum = "5e719e8df665df0d1c8fbfd238015744736151d4445ec0836b8e628aae103b77"
 dependencies = [
  "unicode-ident",
 ]
@@ -3155,7 +3170,7 @@ dependencies = [
 name = "qe-setup"
 version = "0.1.0"
 dependencies = [
- "connection-string",
+ "connection-string 0.2.0",
  "enumflags2",
  "mongodb",
  "mongodb-client",
@@ -3171,6 +3186,7 @@ dependencies = [
 [[package]]
 name = "quaint"
 version = "0.2.0-alpha.13"
+source = "git+https://github.com/prisma/quaint.git?rev=d5d8b67ceba1530a747b85162bd81fdb1ba020c5#d5d8b67ceba1530a747b85162bd81fdb1ba020c5"
 dependencies = [
  "async-trait",
  "base64 0.12.3",
@@ -3179,10 +3195,11 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
- "connection-string",
+ "connection-string 0.1.13",
  "either",
  "futures",
  "hex",
+ "libsqlite3-sys",
  "lru-cache",
  "metrics 0.18.1",
  "mobc",
@@ -3248,14 +3265,14 @@ dependencies = [
  "async-trait",
  "bigdecimal",
  "chrono",
- "connection-string",
+ "connection-string 0.2.0",
  "crossbeam-channel",
  "cuid",
  "enumflags2",
  "futures",
  "indexmap",
  "itertools",
- "lru 0.7.8",
+ "lru",
  "once_cell",
  "opentelemetry",
  "petgraph 0.4.13",
@@ -3283,7 +3300,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.13.1",
- "connection-string",
+ "connection-string 0.2.0",
  "enumflags2",
  "graphql-parser",
  "hyper",
@@ -3335,12 +3352,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "connection-string",
+ "connection-string 0.2.0",
  "futures",
  "js-connectors",
  "napi",
  "napi-build",
- "napi-derive",
+ "napi-derive 2.13.0",
  "opentelemetry",
  "prisma-models",
  "psl",
@@ -3442,9 +3459,9 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quote"
-version = "1.0.26"
+version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4424af4bf778aae2051a77b60283332f386554255d722233d09fbfc7e30da2fc"
+checksum = "b5b9d34b8991d19d98081b46eacdd8eb58c6f2b201139f7c5f643cc155a633af"
 dependencies = [
  "proc-macro2",
 ]
@@ -3608,7 +3625,7 @@ version = "0.1.0"
 dependencies = [
  "bigdecimal",
  "codspeed-criterion-compat",
- "connection-string",
+ "connection-string 0.2.0",
  "dmmf",
  "futures",
  "graphql-parser",
@@ -3658,7 +3675,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "tokio",
- "tokio-native-tls",
+ "tokio-native-tls 0.3.1",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -3694,13 +3711,13 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.29.0"
+version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "549b9d036d571d42e6e85d1c1425e2ac83491075078ca9a15be021c56b1641f2"
+checksum = "b838eba278d213a8beaf485bd313fd580ca4505a00d5871caeb1457c55322cae"
 dependencies = [
  "bitflags 2.1.0",
  "chrono",
- "fallible-iterator",
+ "fallible-iterator 0.3.0",
  "fallible-streaming-iterator",
  "hashlink",
  "libsqlite3-sys",
@@ -3904,7 +3921,7 @@ version = "0.1.0"
 dependencies = [
  "backtrace",
  "base64 0.13.1",
- "connection-string",
+ "connection-string 0.2.0",
  "expect-test",
  "indoc",
  "jsonrpc-core",
@@ -4241,7 +4258,7 @@ name = "sql-introspection-tests"
 version = "0.1.0"
 dependencies = [
  "barrel",
- "connection-string",
+ "connection-string 0.2.0",
  "enumflags2",
  "expect-test",
  "indoc",
@@ -4267,7 +4284,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "colored",
- "connection-string",
+ "connection-string 0.2.0",
  "enumflags2",
  "expect-test",
  "indoc",
@@ -4327,7 +4344,7 @@ name = "sql-schema-connector"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "connection-string",
+ "connection-string 0.2.0",
  "datamodel-renderer",
  "either",
  "enumflags2",
@@ -4488,9 +4505,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.14"
+version = "2.0.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcf316d5356ed6847742d036f8a39c3b8435cac10bd528a4bd461928a6ab34d5"
+checksum = "9f35bcdf61fd8e7be6caf75f429fdca8beb3ed76584befb503b1569faee373ed"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4565,7 +4582,7 @@ dependencies = [
 name = "test-setup"
 version = "0.1.0"
 dependencies = [
- "connection-string",
+ "connection-string 0.2.0",
  "dissimilar",
  "enumflags2",
  "once_cell",
@@ -4634,7 +4651,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
- "connection-string",
+ "connection-string 0.2.0",
  "encoding",
  "enumflags2",
  "futures",
@@ -4749,6 +4766,15 @@ dependencies = [
 
 [[package]]
 name = "tokio-native-tls"
+version = "0.3.0"
+source = "git+https://github.com/pimeys/tls?branch=vendored-openssl#6d0e6fc7a4bf6f290b1033764b47cb3f26d7fceb"
+dependencies = [
+ "native-tls",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-native-tls"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
@@ -4760,12 +4786,12 @@ dependencies = [
 [[package]]
 name = "tokio-postgres"
 version = "0.7.7"
-source = "git+https://github.com/prisma/rust-postgres?rev=00d4815e58859261bdfca71c75be7dc657303f7d#00d4815e58859261bdfca71c75be7dc657303f7d"
+source = "git+https://github.com/pimeys/rust-postgres?rev=064a6a50427542e2c166e870027735aab3b52e77#064a6a50427542e2c166e870027735aab3b52e77"
 dependencies = [
  "async-trait",
  "byteorder",
  "bytes",
- "fallible-iterator",
+ "fallible-iterator 0.2.0",
  "futures-channel",
  "futures-util",
  "log",
@@ -5699,3 +5725,23 @@ name = "yansi"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
+
+[[package]]
+name = "zerocopy"
+version = "0.7.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b9b4fd18abc82b8136838da5d50bae7bdea537c574d8dc1a34ed098d6c166f0"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.7.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa4f8080344d4671fb4e831a13ad1e68092748387dfc4f55e356242fae12ce3e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.77",
+]

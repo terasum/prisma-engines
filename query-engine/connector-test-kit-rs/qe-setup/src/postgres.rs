@@ -1,4 +1,4 @@
-use quaint::{connector::PostgresFlavour, prelude::*, single::Quaint};
+use quaint::{prelude::*, single::Quaint};
 use schema_core::schema_connector::{ConnectorError, ConnectorResult};
 use std::collections::HashMap;
 use url::Url;
@@ -6,7 +6,7 @@ use url::Url;
 pub(crate) async fn postgres_setup(url: String, prisma_schema: &str, db_schemas: &[&str]) -> ConnectorResult<()> {
     let mut parsed_url = Url::parse(&url).map_err(ConnectorError::url_parse_error)?;
     let mut quaint_url = quaint::connector::PostgresUrl::new(parsed_url.clone()).unwrap();
-    quaint_url.set_flavour(PostgresFlavour::Postgres);
+    // quaint_url.set_flavour(PostgresFlavour::Postgres);
 
     let (db_name, schema) = (quaint_url.dbname(), quaint_url.schema());
 
